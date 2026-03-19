@@ -38,10 +38,17 @@ builder.Services
 builder.Services.AddAuthorization();
 
 // ---------------------------------------------------------------------------
-// PostgreSQL — EF Core
+// Database — EF Core (PostgreSQL or SQLite based on DatabaseProvider setting)
 // ---------------------------------------------------------------------------
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? "PostgreSQL";
+
 builder.Services.AddDbContext<DataNexusDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DataNexus")));
+{
+    if (dbProvider.Equals("SQLite", StringComparison.OrdinalIgnoreCase))
+        options.UseSqlite(builder.Configuration.GetConnectionString("DataNexus"));
+    else
+        options.UseNpgsql(builder.Configuration.GetConnectionString("DataNexus"));
+});
 
 // ---------------------------------------------------------------------------
 // Identity services

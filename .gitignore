@@ -31,3 +31,4 @@ appsettings.*.local.json
 
 # Build output
 publish/
+backend/appsettings.json

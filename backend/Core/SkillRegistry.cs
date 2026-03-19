@@ -14,7 +14,7 @@ public sealed class SkillRegistry(
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
 
-        await db.Database.MigrateAsync(ct);
+        await db.Database.EnsureCreatedAsync(ct);
 
         if (seedPath is not null && Directory.Exists(seedPath))
         {

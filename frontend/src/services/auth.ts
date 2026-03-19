@@ -1,9 +1,9 @@
 import Keycloak from "keycloak-js";
 
 const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL ?? "https://your-keycloak-server",
-  realm: import.meta.env.VITE_KEYCLOAK_REALM ?? "datanexus",
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? "datanexus-frontend",
+  url: import.meta.env.VITE_KEYCLOAK_URL ?? "https://cdskc.gprddigital.com",
+  realm: import.meta.env.VITE_KEYCLOAK_REALM ?? "DashboardPlus",
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? "copilot-services",
 });
 
 let initialized = false;
