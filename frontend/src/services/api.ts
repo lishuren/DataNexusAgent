@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import type { Agent, Pipeline, PipelineRequest, ProcessingRequest, ProcessingResult, Skill } from "@/types/api";
+import type { Agent, Pipeline, PipelineRequest, ProcessingRequest, ProcessingResult, Skill, TaskHistory } from "@/types/api";
 
 const BASE_URL = "/api";
 
@@ -120,3 +120,7 @@ export const deletePipeline = (id: number) =>
 
 export const publishPipeline = (id: number) =>
   apiFetch<Pipeline>(`/pipelines/${id}/publish`, { method: "POST" });
+
+// --- Task History ---
+
+export const listTasks = () => apiFetch<TaskHistory[]>("/tasks");

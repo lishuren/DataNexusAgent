@@ -1,35 +1,58 @@
+import { useCallback, useEffect, useState } from "react";
+import type { TaskHistory } from "@/types/api";
+import { listTasks } from "@/services/api";
+
 export function RecentTasks() {
-  // Placeholder — will be wired to real data when backend supports task history
-  const tasks = [
-    { success: true, label: "Parse Q1-2026.xlsx → API upload", badge: "1.2k rows", time: "2 min ago" },
-    { success: true, label: "Clean addresses in customer-data.csv", badge: "843 rows", time: "1 hour ago" },
-    { success: false, label: "Transform inventory.json → DB write", badge: "Schema error", time: "3 hours ago" },
-    { success: true, label: "Normalize dates in legacy-export.csv", badge: "5.6k rows", time: "Yesterday" },
-  ];
+  const [tasks, setTasks] = useState<TaskHistory[]>([]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setTasks(await listTasks());
+    } catch {
+      /* ignore — auth may not be ready */
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  if (tasks.length === 0) return null;
+
+  const formatTime = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60_000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    const days = Math.floor(hours / 24);
+    return days === 1 ? "Yesterday" : `${days} days ago`;
+  };
+
+  const formatDuration = (ms: number) =>
+    ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 
   return (
     <div className="card" style={{ marginTop: "1rem" }}>
       <h2>🕘 Recent Tasks</h2>
       <ul className="skill-list">
-        {tasks.map((t, i) => (
-          <li key={i}>
+        {tasks.map((t) => (
+          <li key={t.id}>
             <span>
               <span style={{ color: t.success ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
                 {t.success ? "✓" : "✗"}
               </span>{" "}
-              {t.label}
-              <span
-                className="badge"
-                style={{
-                  marginLeft: 8,
-                  background: t.success ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-                  color: t.success ? "var(--success)" : "var(--danger)",
-                }}
-              >
-                {t.badge}
+              {t.summary}
+              {t.agentName && (
+                <span className="badge badge-private" style={{ marginLeft: 8 }}>{t.agentName}</span>
+              )}
+              {t.pipelineName && (
+                <span className="badge badge-public" style={{ marginLeft: 8 }}>{t.pipelineName}</span>
+              )}
+              <span style={{ marginLeft: 8, fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                {formatDuration(t.durationMs)}
               </span>
             </span>
-            <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>{t.time}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>{formatTime(t.createdAt)}</span>
           </li>
         ))}
       </ul>

@@ -27,11 +27,31 @@ builder.Services
         {
             ValidateIssuer = true,
             ValidIssuer = keycloakSection["Authority"],
-            ValidateAudience = true,
-            ValidAudience = keycloakSection["Audience"],
+            ValidateAudience = false,
             ValidateLifetime = true,
             NameClaimType = "preferred_username",
             RoleClaimType = "realm_access"
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+                logger.LogError(context.Exception, "JWT authentication failed");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+                logger.LogInformation("JWT token validated for {User}", context.Principal?.Identity?.Name);
+                return Task.CompletedTask;
+            },
+            OnChallenge = context =>
+            {
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+                logger.LogWarning("JWT challenge issued: {Error} {ErrorDescription}", context.Error, context.ErrorDescription);
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -87,6 +107,7 @@ builder.Services.AddHttpClient("DataNexusOutput");
 builder.Services.AddSingleton<SkillRegistry>();
 builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<PipelineRegistry>();
+builder.Services.AddSingleton<TaskHistoryRegistry>();
 
 // External agent execution
 builder.Services.Configure<ExternalAgentOptions>(
@@ -126,5 +147,6 @@ app.MapProcessingEndpoints();
 app.MapSkillsEndpoints();
 app.MapAgentEndpoints();
 app.MapPipelineEndpoints();
+app.MapTaskHistoryEndpoints();
 
 app.Run();

@@ -1,4 +1,5 @@
 using DataNexus.Agents;
+using DataNexus.Core;
 using DataNexus.Identity;
 using DataNexus.Models;
 
@@ -14,13 +15,26 @@ public static class ProcessingEndpoints
         group.MapPost("/", async (
             ProcessingRequest request,
             DataNexusEngine engine,
+            TaskHistoryRegistry history,
             UserContext user,
             CancellationToken ct) =>
         {
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var result = await engine.ProcessAsync(request, user, ct);
+            sw.Stop();
+
+            await history.RecordAsync(new TaskHistoryEntity
+            {
+                Summary = $"{request.InputSource} → {request.OutputDestination}",
+                AgentId = request.AgentId,
+                Success = result.Success,
+                Message = result.Message,
+                DurationMs = sw.Elapsed.TotalMilliseconds,
+                OwnerId = user.UserId,
+            }, ct);
 
             return result.Success
                 ? Results.Ok(result)
@@ -30,13 +44,26 @@ public static class ProcessingEndpoints
         group.MapPost("/pipeline", async (
             PipelineRequest pipeline,
             DataNexusEngine engine,
+            TaskHistoryRegistry history,
             UserContext user,
             CancellationToken ct) =>
         {
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var result = await engine.RunPipelineAsync(pipeline, user, ct);
+            sw.Stop();
+
+            await history.RecordAsync(new TaskHistoryEntity
+            {
+                Summary = $"Pipeline: {pipeline.Name}",
+                PipelineName = pipeline.Name,
+                Success = result.Success,
+                Message = result.Message,
+                DurationMs = sw.Elapsed.TotalMilliseconds,
+                OwnerId = user.UserId,
+            }, ct);
 
             return result.Success
                 ? Results.Ok(result)

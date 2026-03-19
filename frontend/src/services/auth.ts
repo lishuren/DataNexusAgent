@@ -3,7 +3,7 @@ import Keycloak from "keycloak-js";
 const keycloak = new Keycloak({
   url: import.meta.env.VITE_KEYCLOAK_URL ?? "https://cdskc.gprddigital.com",
   realm: import.meta.env.VITE_KEYCLOAK_REALM ?? "DashboardPlus",
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? "copilot-services",
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID ?? "datanexus",
 });
 
 let initialized = false;
@@ -15,6 +15,7 @@ export async function initAuth(): Promise<boolean> {
   const authenticated = await keycloak.init({
     onLoad: "login-required",
     checkLoginIframe: false,
+    pkceMethod: false,
   });
 
   // Auto-refresh token 30s before expiry

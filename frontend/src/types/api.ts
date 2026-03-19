@@ -69,3 +69,17 @@ export interface Pipeline {
   scope: "Public" | "Private";
   ownerId: string | null;
 }
+
+export interface TaskHistory {
+  id: number;
+  summary: string;
+  agentId: number | null;
+  agentName: string | null;
+  pipelineId: number | null;
+  pipelineName: string | null;
+  success: boolean;
+  message: string;
+  rowCount: number | null;
+  durationMs: number;
+  createdAt: string;
+}

@@ -8,6 +8,7 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
     public DbSet<SkillEntity> Skills => Set<SkillEntity>();
     public DbSet<AgentEntity> Agents => Set<AgentEntity>();
     public DbSet<PipelineEntity> Pipelines => Set<PipelineEntity>();
+    public DbSet<TaskHistoryEntity> TaskHistory => Set<TaskHistoryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +63,14 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
 
             entity.Property(e => e.MaxCorrectionAttempts)
                   .HasDefaultValue(3);
+        });
+
+        modelBuilder.Entity<TaskHistoryEntity>(entity =>
+        {
+            entity.ToTable("task_history");
+
+            entity.HasIndex(e => e.OwnerId);
+            entity.HasIndex(e => e.CreatedAt);
         });
     }
 }
