@@ -78,14 +78,19 @@ builder.Services.AddHttpClient("DataNexusOutput");
 // Core services
 // ---------------------------------------------------------------------------
 builder.Services.AddSingleton<SkillRegistry>();
+builder.Services.AddSingleton<AgentRegistry>();
+builder.Services.AddSingleton<PipelineRegistry>();
+
+// External agent execution
+builder.Services.Configure<ExternalAgentOptions>(
+    builder.Configuration.GetSection(ExternalAgentOptions.SectionName));
+builder.Services.AddScoped<ExternalProcessRunner>();
 
 // Plugins
 builder.Services.AddScoped<InputProcessorPlugin>();
 builder.Services.AddScoped<OutputIntegratorPlugin>();
 
 // Agents & Engine
-builder.Services.AddScoped<AnalystAgent>();
-builder.Services.AddScoped<ExecutorAgent>();
 builder.Services.AddScoped<DataNexusEngine>();
 
 var app = builder.Build();
@@ -96,6 +101,9 @@ var app = builder.Build();
 var skillRegistry = app.Services.GetRequiredService<SkillRegistry>();
 var seedPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", ".github", "skills", "public"));
 await skillRegistry.InitializeAsync(seedPath);
+
+var agentRegistry = app.Services.GetRequiredService<AgentRegistry>();
+await agentRegistry.InitializeAsync();
 
 // ---------------------------------------------------------------------------
 // Middleware pipeline
@@ -109,5 +117,7 @@ app.UseMiddleware<KeycloakMiddleware>();
 // ---------------------------------------------------------------------------
 app.MapProcessingEndpoints();
 app.MapSkillsEndpoints();
+app.MapAgentEndpoints();
+app.MapPipelineEndpoints();
 
 app.Run();

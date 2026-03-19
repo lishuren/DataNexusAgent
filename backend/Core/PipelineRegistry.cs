@@ -1,0 +1,141 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+
+namespace DataNexus.Core;
+
+public sealed class PipelineRegistry(
+    IServiceScopeFactory scopeFactory,
+    ILogger<PipelineRegistry> logger)
+{
+    public async Task<IReadOnlyList<PipelineDefinition>> GetPipelinesForUserAsync(
+        string userId, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entities = await db.Pipelines
+            .Where(p => p.Scope == SkillScope.Public || p.OwnerId == userId)
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        return [.. entities.Select(e => e.ToDefinition())];
+    }
+
+    public async Task<IReadOnlyList<PipelineDefinition>> GetPublicPipelinesAsync(
+        CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entities = await db.Pipelines
+            .Where(p => p.Scope == SkillScope.Public)
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        return [.. entities.Select(e => e.ToDefinition())];
+    }
+
+    public async Task<PipelineDefinition?> GetByIdAsync(int id, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
+        return entity?.ToDefinition();
+    }
+
+    public async Task<PipelineDefinition> CreateAsync(
+        string userId, string name, IReadOnlyList<int> agentIds,
+        bool enableSelfCorrection = true, int maxCorrectionAttempts = 3,
+        CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = new PipelineEntity
+        {
+            Name = name,
+            AgentIdsJson = JsonSerializer.Serialize(agentIds),
+            EnableSelfCorrection = enableSelfCorrection,
+            MaxCorrectionAttempts = Math.Clamp(maxCorrectionAttempts, 1, 10),
+            Scope = SkillScope.Private,
+            OwnerId = userId,
+        };
+
+        db.Pipelines.Add(entity);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Created pipeline '{Name}' with {Count} steps",
+            userId, name, agentIds.Count);
+
+        return entity.ToDefinition();
+    }
+
+    public async Task<PipelineDefinition> UpdateAsync(
+        string userId, int pipelineId, string name, IReadOnlyList<int> agentIds,
+        bool enableSelfCorrection, int maxCorrectionAttempts,
+        CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Pipelines.FirstOrDefaultAsync(
+            p => p.Id == pipelineId && p.OwnerId == userId, ct)
+            ?? throw new InvalidOperationException(
+                $"Pipeline {pipelineId} not found for user '{userId}'");
+
+        entity.Name = name;
+        entity.AgentIdsJson = JsonSerializer.Serialize(agentIds);
+        entity.EnableSelfCorrection = enableSelfCorrection;
+        entity.MaxCorrectionAttempts = Math.Clamp(maxCorrectionAttempts, 1, 10);
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Updated pipeline '{Name}'", userId, name);
+
+        return entity.ToDefinition();
+    }
+
+    public async Task DeleteAsync(string userId, int pipelineId, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Pipelines.FirstOrDefaultAsync(
+            p => p.Id == pipelineId && p.OwnerId == userId, ct)
+            ?? throw new InvalidOperationException(
+                $"Pipeline {pipelineId} not found for user '{userId}'");
+
+        db.Pipelines.Remove(entity);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Deleted pipeline '{Name}'", userId, entity.Name);
+    }
+
+    public async Task<PipelineDefinition> PublishAsync(
+        string userId, int pipelineId, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Pipelines.FirstOrDefaultAsync(
+            p => p.Id == pipelineId && p.OwnerId == userId && p.Scope == SkillScope.Private, ct)
+            ?? throw new InvalidOperationException(
+                $"Pipeline {pipelineId} not found for user '{userId}'");
+
+        entity.Scope = SkillScope.Public;
+        entity.OwnerId = null;
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Published pipeline '{Name}' to public", userId, entity.Name);
+
+        return entity.ToDefinition();
+    }
+}

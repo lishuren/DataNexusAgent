@@ -27,6 +27,22 @@ public static class ProcessingEndpoints
                 : Results.UnprocessableEntity(result);
         });
 
+        group.MapPost("/pipeline", async (
+            PipelineRequest pipeline,
+            DataNexusEngine engine,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            var result = await engine.RunPipelineAsync(pipeline, user, ct);
+
+            return result.Success
+                ? Results.Ok(result)
+                : Results.UnprocessableEntity(result);
+        });
+
         return routes;
     }
 }

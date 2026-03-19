@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataNexus — UI Preview</title>
+  <style>
+    :root {
+      --bg: #1a1018;
+      --surface: #251c24;
+      --border: #3d2e3a;
+      --text: #f0e6eb;
+      --text-muted: #b09aa8;
+      --primary: #e07850;
+      --primary-hover: #f09070;
+      --accent: #c06080;
+      --success: #5ab878;
+      --danger: #e05555;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .preview-label {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: var(--primary); color: #fff;
+      text-align: center; padding: 6px; font-size: 13px; font-weight: 600; z-index: 100;
+      letter-spacing: 0.5px;
+    }
+
+    .app { display: flex; flex-direction: column; min-height: 100vh; padding-top: 32px; }
+
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
+    header h1 span { color: var(--primary); }
+    header nav { display: flex; gap: 1.25rem; align-items: center; }
+    header nav a {
+      color: var(--text-muted); text-decoration: none; font-size: 0.875rem;
+      padding: 4px 0; border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    header nav a:hover { color: var(--primary-hover); }
+    header nav a.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    .user-info { font-size: 0.8rem; color: var(--text-muted); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 1rem; border: none; border-radius: 0.5rem;
+      font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.15s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.8rem; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+
+    main { flex: 1; padding: 2rem; max-width: 960px; margin: 0 auto; width: 100%; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;
+    }
+    .card h2 { font-size: 1rem; margin-bottom: 0.75rem; font-weight: 600; }
+
+    input, textarea, select {
+      width: 100%; padding: 0.5rem 0.75rem; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 0.5rem;
+      color: var(--text); font-size: 0.875rem; margin-bottom: 0.75rem;
+      font-family: inherit;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    input:focus, textarea:focus { outline: none; border-color: var(--primary); }
+
+    .badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    }
+    .badge-public { background: rgba(34,197,94,0.15); color: var(--success); }
+    .badge-private { background: rgba(224,120,80,0.15); color: var(--primary); }
+
+    .skill-list { list-style: none; }
+    .skill-list li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.75rem 0; border-bottom: 1px solid var(--border);
+    }
+    .skill-list li:last-child { border-bottom: none; }
+
+    .result-box {
+      padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;
+      font-size: 0.875rem; white-space: pre-wrap;
+    }
+    .result-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--success); }
+
+    .tabs { display: flex; gap: 0; margin-bottom: 1.5rem; }
+    .tab-section { display: none; }
+    .tab-section.active { display: block; }
+
+    /* Page selector */
+    .page-nav { display: flex; gap: 1rem; margin-bottom: 2rem; }
+    .page-nav button {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
+      padding: 0.5rem 1.5rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.85rem;
+    }
+    .page-nav button.active { border-color: var(--primary); color: var(--primary); background: rgba(224,120,80,0.08); }
+
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--success); margin-right: 6px; }
+
+    /* Loading shimmer */
+    @keyframes shimmer { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+    .pulse { animation: shimmer 2s infinite; }
+
+    /* Agent cards */
+    .agent-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
+      padding: 1.25rem; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .agent-card:hover { border-color: var(--primary); }
+    .agent-card.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(224,120,80,0.25); }
+    .agent-card .agent-icon { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .agent-card .agent-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .agent-card .agent-desc { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; }
+    .agent-card .agent-meta { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .agent-card .agent-meta span {
+      font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;
+      background: rgba(224,120,80,0.1); color: var(--primary);
+    }
+    .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
+
+    /* Dynamic agent UI form */
+    .dynamic-form .form-field { margin-bottom: 0.75rem; }
+    .dynamic-form label { font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .dynamic-form .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .dynamic-form .form-field.full { grid-column: 1 / -1; }
+    .dynamic-form .file-drop {
+      border: 2px dashed var(--border); border-radius: 0.5rem; padding: 2rem; text-align: center;
+      color: var(--text-muted); font-size: 0.85rem; cursor: pointer; transition: border-color 0.15s;
+    }
+    .dynamic-form .file-drop:hover { border-color: var(--primary); color: var(--primary); }
+    .dynamic-form .toggle-row { display: flex; align-items: center; gap: 0.5rem; }
+    .dynamic-form .toggle-row input[type="checkbox"] { width: auto; margin: 0; }
+
+    /* Pipeline builder */
+    .pipeline { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 1rem 0; }
+    .pipeline-node {
+      display: flex; align-items: center; gap: 0.4rem;
+      background: rgba(224,120,80,0.1); border: 1px solid var(--primary);
+      padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-size: 0.8rem; color: var(--primary);
+    }
+    .pipeline-arrow { color: var(--text-muted); font-size: 1.1rem; }
+    .pipeline-add {
+      border: 1px dashed var(--border); padding: 0.4rem 0.75rem; border-radius: 0.5rem;
+      font-size: 0.8rem; color: var(--text-muted); cursor: pointer; background: transparent;
+    }
+    .pipeline-add:hover { border-color: var(--primary); color: var(--primary); }
+
+    .sub-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+    .sub-tab {
+      padding: 0.5rem 1rem; font-size: 0.85rem; cursor: pointer; background: none; border: none;
+      color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    .sub-tab:hover { color: var(--text); }
+    .sub-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="preview-label">📐 DataNexus UI Preview — Static Mockup</div>
+
+  <div class="app">
+    <header>
+      <h1><span>⬡</span> DataNexus</h1>
+      <nav>
+        <a href="#" class="active" onclick="showPage('process')">Process</a>
+        <a href="#" onclick="showPage('agents')">Agents</a>
+        <a href="#" onclick="showPage('skills')">Skills</a>
+        <a href="#" onclick="showPage('marketplace')">Marketplace</a>
+        <span class="user-info"><span class="status-dot"></span>bob123</span>
+        <button class="btn btn-sm btn-danger">Sign out</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ==================== PROCESS PAGE ==================== -->
+      <div id="page-process" class="tab-section active">
+
+        <!-- Agent selector -->
+        <div class="card">
+          <h2>🤖 Select Agent</h2>
+          <div class="agent-grid" id="process-agent-grid" style="margin-bottom:1rem;">
+            <div class="agent-card selected" data-agent="data-analyst">
+              <div class="agent-icon">🧠</div>
+              <div class="agent-name">Data Analyst</div>
+              <div class="agent-desc">Parse, clean, and transform data with skill-based rules</div>
+              <div class="agent-meta"><span>Excel</span><span>CSV</span><span>JSON</span><span>Built-in</span></div>
+            </div>
+            <div class="agent-card" data-agent="api-integrator">
+              <div class="agent-icon">🚀</div>
+              <div class="agent-name">API Integrator</div>
+              <div class="agent-desc">Validate schemas and push data to REST APIs</div>
+              <div class="agent-meta"><span>HTTPS</span><span>REST</span><span>Built-in</span></div>
+            </div>
+            <div class="agent-card" data-agent="report-writer">
+              <div class="agent-icon">📝</div>
+              <div class="agent-name">Report Writer</div>
+              <div class="agent-desc">Analyze data and generate summaries or reports</div>
+              <div class="agent-meta"><span>Markdown</span><span>PDF</span><span>Private</span></div>
+            </div>
+            <div class="agent-card" data-agent="data-validator">
+              <div class="agent-icon">🔍</div>
+              <div class="agent-name">Data Validator</div>
+              <div class="agent-desc">Check data quality, find duplicates, flag anomalies</div>
+              <div class="agent-meta"><span>QA</span><span>Validation</span><span>Private</span></div>
+            </div>
+            <div class="agent-card" data-agent="python-etl">
+              <div class="agent-icon">🐍</div>
+              <div class="agent-name">Python ETL</div>
+              <div class="agent-desc">Run a Python script for custom ETL pipelines</div>
+              <div class="agent-meta"><span>External</span><span>python3</span><span>Private</span></div>
+            </div>
+            <div class="agent-card" data-agent="cli-tool">
+              <div class="agent-icon">⌨️</div>
+              <div class="agent-name">CLI Linter</div>
+              <div class="agent-desc">Run a Node.js CLI tool to lint and fix data files</div>
+              <div class="agent-meta"><span>External</span><span>node</span><span>Private</span></div>
+            </div>
+          </div>
+
+          <!-- Saved pipelines -->
+          <h3 style="font-size:0.85rem; color:var(--text-muted); margin-top:1rem; margin-bottom:0.5rem;">🔗 Saved Pipelines</h3>
+          <div class="agent-grid" id="process-pipeline-grid">
+            <div class="agent-card" data-pipeline="excel-to-api">
+              <div class="agent-icon">🔗</div>
+              <div class="agent-name">Excel-to-API Pipeline</div>
+              <div class="agent-desc">Data Analyst → Data Validator → API Integrator</div>
+              <div class="agent-meta"><span>3 steps</span><span>Self-correction</span></div>
+            </div>
+            <div class="agent-card" data-pipeline="etl-validate">
+              <div class="agent-icon">🔗</div>
+              <div class="agent-name">ETL + Validate</div>
+              <div class="agent-desc">Python ETL → Data Validator</div>
+              <div class="agent-meta"><span>2 steps</span><span>Mixed (External+LLM)</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic agent-specific UI -->
+        <div class="card" id="agent-dynamic-ui">
+          <h2 id="agent-ui-title">🧠 Data Analyst</h2>
+          <div class="dynamic-form" id="agent-form-container">
+            <!-- Rendered dynamically by JS based on selected agent -->
+          </div>
+          <div style="display:flex; gap:0.75rem; align-items:center; margin-top:0.75rem;">
+            <button class="btn btn-primary">▶ Run Task</button>
+            <span id="agent-ui-hint" style="color:var(--text-muted); font-size:0.8rem;">Using: <strong style="color:var(--primary)">Data Analyst</strong></span>
+          </div>
+        </div>
+
+        <!-- Quick actions grid (adapts to selected agent) -->
+        <div id="quick-actions-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.75rem; margin-bottom:1rem;">
+        </div>
+
+        <!-- Result -->
+        <div class="result-box result-success">
+<strong>✓ Task Completed</strong>
+Parsed 1,247 rows from Q1-2026.xlsx → pushed to https://api.acme.com/v2/records
+
+Skills Applied: ExcelToSqlMapping, custom-parser
+Attempts: 1
+Duration: 3.2s
+
+<strong>Warnings:</strong> None</div>
+
+        <!-- Recent tasks -->
+        <div class="card" style="margin-top:1rem;">
+          <h2>🕘 Recent Tasks</h2>
+          <ul class="skill-list">
+            <li>
+              <span>
+                <span style="color:var(--success); font-weight:600;">✓</span>
+                Parse Q1-2026.xlsx → API upload
+                <span class="badge badge-public" style="margin-left:8px;">1.2k rows</span>
+              </span>
+              <span style="color:var(--text-muted); font-size:0.75rem;">2 min ago</span>
+            </li>
+            <li>
+              <span>
+                <span style="color:var(--success); font-weight:600;">✓</span>
+                Clean addresses in customer-data.csv
+                <span class="badge badge-public" style="margin-left:8px;">843 rows</span>
+              </span>
+              <span style="color:var(--text-muted); font-size:0.75rem;">1 hour ago</span>
+            </li>
+            <li>
+              <span>
+                <span style="color:var(--danger); font-weight:600;">✗</span>
+                Transform inventory.json → DB write
+                <span class="badge" style="background:rgba(239,68,68,0.15); color:var(--danger); margin-left:8px;">Schema error</span>
+              </span>
+              <span style="color:var(--text-muted); font-size:0.75rem;">3 hours ago</span>
+            </li>
+            <li>
+              <span>
+                <span style="color:var(--success); font-weight:600;">✓</span>
+                Normalize dates in legacy-export.csv
+                <span class="badge badge-public" style="margin-left:8px;">5.6k rows</span>
+              </span>
+              <span style="color:var(--text-muted); font-size:0.75rem;">Yesterday</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ==================== SKILLS PAGE ==================== -->
+      <div id="page-skills" class="tab-section">
+        <div class="card">
+          <h2>📋 Your Skills</h2>
+          <ul class="skill-list">
+            <li>
+              <span>ExcelToSqlMapping <span class="badge badge-public">Public</span></span>
+              <span style="color: var(--text-muted); font-size: 0.8rem;">Built-in</span>
+            </li>
+            <li>
+              <span>custom-parser <span class="badge badge-private">Private</span></span>
+              <button class="btn btn-sm btn-primary">Publish</button>
+            </li>
+            <li>
+              <span>date-normalizer <span class="badge badge-private">Private</span></span>
+              <button class="btn btn-sm btn-primary">Publish</button>
+            </li>
+            <li>
+              <span>address-cleaner <span class="badge badge-private">Private</span></span>
+              <button class="btn btn-sm btn-primary">Publish</button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2>➕ Create Skill</h2>
+          <input placeholder="Skill name (e.g. custom-parser)" value="currency-converter" />
+          <textarea placeholder="Skill instructions in markdown...">Whenever you see a currency amount with a $ symbol, convert it to EUR using a 1:0.92 rate. Output as a decimal with 2 decimal places. Strip the currency symbol.</textarea>
+          <button class="btn btn-primary">Create Skill</button>
+        </div>
+
+        <div class="result-box result-success">Skill "currency-converter" created.</div>
+      </div>
+
+      <!-- ==================== AGENTS PAGE ==================== -->
+      <div id="page-agents" class="tab-section">
+
+        <!-- My agents -->
+        <div class="card">
+          <h2>🤖 My Agents</h2>
+          <div class="agent-grid">
+            <div class="agent-card">
+              <div class="agent-icon">🧠</div>
+              <div class="agent-name">Data Analyst <span class="badge badge-public">Built-in</span></div>
+              <div class="agent-desc">Parse, clean, and transform data with skill-based rules</div>
+              <div class="agent-meta"><span>InputProcessor</span><span>Excel</span><span>CSV</span><span>JSON</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">🚀</div>
+              <div class="agent-name">API Integrator <span class="badge badge-public">Built-in</span></div>
+              <div class="agent-desc">Validate schemas and push data to REST APIs or databases</div>
+              <div class="agent-meta"><span>OutputIntegrator</span><span>HTTPS</span><span>Schema</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">📝</div>
+              <div class="agent-name">Report Writer <span class="badge badge-private">Private</span></div>
+              <div class="agent-desc">Analyze data and generate markdown reports or summaries</div>
+              <div class="agent-meta"><span>Summarizer</span><span>Markdown</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">🔍</div>
+              <div class="agent-name">Data Validator <span class="badge badge-private">Private</span></div>
+              <div class="agent-desc">Check data quality, find duplicates, flag anomalies</div>
+              <div class="agent-meta"><span>QA</span><span>Validation</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create agent -->
+        <div class="card">
+          <h2>➕ Create Agent</h2>
+
+          <div style="margin-bottom:0.75rem;">
+            <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Execution Type</label>
+            <div style="display:flex; gap:0.5rem;">
+              <button class="btn btn-sm" id="btn-type-llm" style="background:var(--primary); color:#fff;" onclick="toggleExecType('llm')">🤖 LLM Agent</button>
+              <button class="btn btn-sm btn-outline" id="btn-type-ext" onclick="toggleExecType('external')">⌨️ External (CLI / Script)</button>
+            </div>
+          </div>
+
+          <input placeholder="Agent name (e.g. email-classifier)" value="email-classifier" />
+          <input placeholder="Icon emoji" value="📧" style="width:80px; display:inline-block;" />
+
+          <!-- LLM-specific fields -->
+          <div id="create-llm-fields">
+            <textarea placeholder="System prompt — define the agent's role and behavior...">You are an Email Classifier Agent. Your role is to:
+1. Read incoming email content (subject + body).
+2. Classify into categories: Inquiry, Complaint, Order, Spam.
+3. Extract key entities: sender, date, priority, action items.
+4. Output structured JSON with classification and entities.</textarea>
+          </div>
+
+          <!-- External-specific fields (hidden by default) -->
+          <div id="create-external-fields" style="display:none;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+              <div>
+                <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Command <span style="color:var(--danger)">*</span></label>
+                <input placeholder="python3, node, bash, /usr/local/bin/myagent" value="python3" style="margin-bottom:0;" />
+              </div>
+              <div>
+                <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Arguments</label>
+                <input placeholder="scripts/etl.py --mode transform" value="scripts/etl.py --mode transform" style="margin-bottom:0;" />
+              </div>
+              <div>
+                <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Working Directory</label>
+                <input placeholder="/tmp/datanexus (must be allowed by server)" style="margin-bottom:0;" />
+              </div>
+              <div>
+                <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Timeout (seconds)</label>
+                <input type="number" value="30" min="1" max="120" style="margin-bottom:0;" />
+              </div>
+            </div>
+            <div style="padding:0.75rem; background:rgba(224,120,80,0.05); border:1px solid var(--border); border-radius:0.5rem; margin-bottom:0.75rem;">
+              <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.25rem;">📋 stdin/stdout JSON Protocol</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">
+                Your script receives <code style="color:var(--primary);">{"input":"...","parameters":{...},"userId":"..."}</code> on <strong>stdin</strong>.<br/>
+                It must write <code style="color:var(--primary);">{"success":true,"message":"...","data":...}</code> to <strong>stdout</strong>.<br/>
+                Exit code 0 = success, non-zero = failure.
+              </div>
+            </div>
+          </div>
+
+          <textarea id="create-agent-desc" placeholder="Description" style="min-height:50px;">Classify emails and extract entities</textarea>
+
+          <div style="margin-bottom:0.75rem;">
+            <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Plugins</label>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <span class="badge" style="background:rgba(224,120,80,0.15); color:var(--primary); padding:4px 10px; font-size:0.75rem;">InputProcessor ✕</span>
+              <button class="pipeline-add" style="padding:2px 8px;">+ Add plugin</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:0.75rem;">
+            <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Skills (injected into system prompt)</label>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <span class="badge" style="background:rgba(34,197,94,0.15); color:var(--success); padding:4px 10px; font-size:0.75rem;">custom-parser ✕</span>
+              <button class="pipeline-add" style="padding:2px 8px;">+ Add skill</button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary">Create Agent</button>
+        </div>
+
+        <!-- Compose pipeline -->
+        <div class="card">
+          <h2>🔗 Compose Agent Pipeline</h2>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">Chain agents together — output of one feeds into the next. Self-correction loops back on schema errors.</p>
+          <input id="pipeline-name" placeholder="Pipeline name" value="Excel-to-API Pipeline" />
+          <div class="pipeline" id="pipeline-builder">
+            <!-- Steps rendered by JS -->
+          </div>
+          <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="savePipeline()">Save Pipeline</button>
+            <button class="btn btn-outline btn-sm" onclick="clearPipeline()" style="color:var(--danger); border-color:var(--danger);">Clear All</button>
+            <label style="font-size:0.8rem; color:var(--text-muted);">
+              <input type="checkbox" id="pipeline-self-correct" checked style="width:auto; margin-right:4px; margin-bottom:0;" />
+              Enable self-correction (retry on schema mismatch, max 3)
+            </label>
+          </div>
+          <div id="pipeline-save-msg" style="display:none; margin-top:0.75rem;"></div>
+        </div>
+
+        <!-- Saved pipelines list -->
+        <div class="card">
+          <h2>📋 Saved Pipelines</h2>
+          <ul class="skill-list" id="saved-pipelines-list">
+            <!-- Rendered by JS -->
+          </ul>
+        </div>
+      </div>
+
+      <!-- ==================== MARKETPLACE PAGE ==================== -->
+      <div id="page-marketplace" class="tab-section">
+
+        <div class="sub-tabs">
+          <button class="sub-tab active" onclick="showSubTab('mkt-agents', this)">🤖 Agents</button>
+          <button class="sub-tab" onclick="showSubTab('mkt-skills', this)">📋 Skills</button>
+        </div>
+
+        <div id="mkt-agents" class="sub-section">
+          <div class="agent-grid">
+            <div class="agent-card">
+              <div class="agent-icon">🧠</div>
+              <div class="agent-name">Data Analyst <span class="badge badge-public">Public</span></div>
+              <div class="agent-desc">Parse, clean, and transform data with skill-based rules</div>
+              <div class="agent-meta"><span>Built-in</span><span>⭐ 42</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">🚀</div>
+              <div class="agent-name">API Integrator <span class="badge badge-public">Public</span></div>
+              <div class="agent-desc">Validate schemas and push data to REST APIs</div>
+              <div class="agent-meta"><span>Built-in</span><span>⭐ 38</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">📧</div>
+              <div class="agent-name">Email Classifier <span class="badge badge-public">Public</span></div>
+              <div class="agent-desc">Classify emails into categories and extract entities</div>
+              <div class="agent-meta"><span>NLP</span><span>⭐ 27</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">🌐</div>
+              <div class="agent-name">Web Scraper <span class="badge badge-public">Public</span></div>
+              <div class="agent-desc">Extract structured data from web pages via URL</div>
+              <div class="agent-meta"><span>HTML</span><span>⭐ 19</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">📊</div>
+              <div class="agent-name">Chart Generator <span class="badge badge-public">Public</span></div>
+              <div class="agent-desc">Turn tabular data into chart configs (Chart.js/Mermaid)</div>
+              <div class="agent-meta"><span>Visualization</span><span>⭐ 15</span></div>
+            </div>
+            <div class="agent-card">
+              <div class="agent-icon">🛡️</div>
+              <div class="agent-name">PII Redactor <span class="badge badge-public">Public</span></div>
+              <div class="agent-desc">Detect and mask personal data before processing</div>
+              <div class="agent-meta"><span>Privacy</span><span>⭐ 31</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="mkt-skills" class="sub-section" style="display:none;">
+          <div class="card" style="margin-top:0;">
+            <ul class="skill-list">
+              <li>
+                <span>ExcelToSqlMapping <span class="badge badge-public">Public</span></span>
+                <span style="color: var(--text-muted); font-size: 0.8rem;">Maps Excel columns → SQL types</span>
+              </li>
+              <li>
+                <span>JsonFlattener <span class="badge badge-public">Public</span></span>
+                <span style="color: var(--text-muted); font-size: 0.8rem;">Flatten nested JSON to tabular</span>
+              </li>
+              <li>
+                <span>iso-date-normalizer <span class="badge badge-public">Public</span></span>
+                <span style="color: var(--text-muted); font-size: 0.8rem;">Normalize dates to ISO-8601</span>
+              </li>
+              <li>
+                <span>pii-redactor <span class="badge badge-public">Public</span></span>
+                <span style="color: var(--text-muted); font-size: 0.8rem;">Redact emails, phones, SSNs</span>
+              </li>
+              <li>
+                <span>csv-dedup <span class="badge badge-public">Public</span></span>
+                <span style="color: var(--text-muted); font-size: 0.8rem;">Deduplicate CSV rows by key</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ── Agent UI Schema definitions (mirrors backend AgentEntity.UiSchema) ──
+    const agentSchemas = {
+      'data-analyst': {
+        icon: '🧠', name: 'Data Analyst',
+        fields: [
+          { key: 'file', label: 'Data File', type: 'file', accept: '.xlsx,.csv,.json,.tsv', placeholder: 'Drop your file here or click to browse', required: true },
+          { key: 'task', label: 'Task Description', type: 'textarea', placeholder: 'Describe what you want to do with this data, e.g.\n• Parse and clean\n• Transform column types\n• Apply skill-based mapping rules' },
+          { key: 'skill', label: 'Skill (optional)', type: 'text', placeholder: 'e.g. custom-parser, ExcelToSqlMapping' },
+          { key: 'outputFormat', label: 'Output Format', type: 'select', options: ['JSON', 'CSV', 'SQL Statements', 'Markdown Table'] },
+        ],
+        quickActions: [
+          { icon: '📊', title: 'Parse Spreadsheet', desc: 'Excel, CSV, Google Sheets' },
+          { icon: '🔄', title: 'Transform Data', desc: 'Clean, map, normalize' },
+          { icon: '🧹', title: 'Clean Dataset', desc: 'Remove duplicates, fix types' },
+          { icon: '📐', title: 'Apply Skill Rules', desc: 'Map via custom skill' },
+        ]
+      },
+      'api-integrator': {
+        icon: '🚀', name: 'API Integrator',
+        fields: [
+          { key: 'endpoint', label: 'API Endpoint', type: 'url', placeholder: 'https://api.example.com/v2/records', required: true },
+          { key: 'method', label: 'HTTP Method', type: 'select', options: ['POST', 'PUT', 'PATCH'], default: 'POST' },
+          { key: 'data', label: 'Request Body / Data Source', type: 'textarea', placeholder: 'Paste JSON payload, or describe the data to send...' },
+          { key: 'schema', label: 'Response Schema (optional)', type: 'textarea', placeholder: '{"type": "object", "properties": {...}}' },
+          { key: 'headers', label: 'Custom Headers', type: 'text', placeholder: 'Authorization: Bearer xxx, Content-Type: application/json' },
+          { key: 'retryOnError', label: 'Retry on failure', type: 'toggle', default: 'true' },
+        ],
+        quickActions: [
+          { icon: '🚀', title: 'Push to REST API', desc: 'POST/PUT to any HTTPS endpoint' },
+          { icon: '🔗', title: 'Webhook Trigger', desc: 'Fire a webhook with payload' },
+          { icon: '🗄️', title: 'Write to Database', desc: 'Insert, upsert, bulk load' },
+          { icon: '🔍', title: 'Validate Schema', desc: 'Check response against schema' },
+        ]
+      },
+      'report-writer': {
+        icon: '📝', name: 'Report Writer',
+        fields: [
+          { key: 'data', label: 'Source Data', type: 'textarea', placeholder: 'Paste data or describe the data source to analyze...', required: true },
+          { key: 'reportType', label: 'Report Type', type: 'select', options: ['Executive Summary', 'Detailed Analysis', 'Comparison Report', 'Trend Report', 'Custom'] },
+          { key: 'format', label: 'Output Format', type: 'select', options: ['Markdown', 'HTML', 'Plain Text'] },
+          { key: 'sections', label: 'Sections to Include', type: 'text', placeholder: 'e.g. Overview, Key Findings, Charts, Recommendations' },
+          { key: 'tone', label: 'Writing Tone', type: 'select', options: ['Professional', 'Technical', 'Casual', 'Academic'] },
+        ],
+        quickActions: [
+          { icon: '📈', title: 'Sales Summary', desc: 'Revenue, trends, forecasts' },
+          { icon: '📋', title: 'Data Quality Report', desc: 'Completeness, anomalies' },
+          { icon: '📊', title: 'Comparison Matrix', desc: 'Side-by-side analysis' },
+          { icon: '🎯', title: 'Action Items', desc: 'Key findings + next steps' },
+        ]
+      },
+      'data-validator': {
+        icon: '🔍', name: 'Data Validator',
+        fields: [
+          { key: 'file', label: 'Data to Validate', type: 'file', accept: '.xlsx,.csv,.json,.tsv', placeholder: 'Drop your file here or click to browse', required: true },
+          { key: 'rules', label: 'Validation Rules', type: 'textarea', placeholder: 'Describe rules, e.g.\n• Email column must be valid format\n• Age must be 0-150\n• No duplicate IDs\n• Required fields: name, email, phone' },
+          { key: 'strictMode', label: 'Strict mode (fail on first error)', type: 'toggle', default: 'false' },
+          { key: 'outputFormat', label: 'Report Format', type: 'select', options: ['Summary', 'Detailed (row-by-row)', 'JSON Error List'] },
+        ],
+        quickActions: [
+          { icon: '🔎', title: 'Find Duplicates', desc: 'By key column(s)' },
+          { icon: '⚠️', title: 'Flag Anomalies', desc: 'Statistical outliers' },
+          { icon: '✅', title: 'Schema Check', desc: 'Validate types & constraints' },
+          { icon: '📧', title: 'Email/Phone Lint', desc: 'Format validation' },
+        ]
+      },
+      'python-etl': {
+        icon: '🐍', name: 'Python ETL', executionType: 'External',
+        fields: [
+          { key: 'data', label: 'Input Data', type: 'textarea', placeholder: 'Paste data or describe the data source...', required: true },
+          { key: 'params', label: 'Parameters (JSON)', type: 'textarea', placeholder: '{"mode": "transform", "outputFormat": "csv"}' },
+        ],
+        quickActions: [
+          { icon: '🐍', title: 'Run ETL Script', desc: 'python3 scripts/etl.py' },
+          { icon: '📊', title: 'Transform CSV', desc: 'Clean & normalize' },
+          { icon: '🔄', title: 'Batch Convert', desc: 'JSON → CSV/SQL' },
+          { icon: '⚙️', title: 'Custom Pipeline', desc: 'Provide params JSON' },
+        ]
+      },
+      'cli-tool': {
+        icon: '⌨️', name: 'CLI Linter', executionType: 'External',
+        fields: [
+          { key: 'file', label: 'File to Lint', type: 'file', accept: '.json,.csv,.yaml,.xml', placeholder: 'Drop your file here', required: true },
+          { key: 'fixMode', label: 'Auto-fix issues', type: 'toggle', default: 'true' },
+        ],
+        quickActions: [
+          { icon: '✅', title: 'Lint File', desc: 'Check for issues' },
+          { icon: '🔧', title: 'Auto-fix', desc: 'Fix issues in-place' },
+          { icon: '📋', title: 'Report Only', desc: 'List issues without fixing' },
+          { icon: '⚙️', title: 'Custom Rules', desc: 'Provide rule config' },
+        ]
+      },
+    };
+
+    // ── Render dynamic form from uiSchema ──
+    function renderAgentUI(agentKey) {
+      const schema = agentSchemas[agentKey];
+      if (!schema) return;
+
+      // Update title
+      const typeBadge = schema.executionType === 'External'
+        ? ' <span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; margin-left:6px; font-size:0.65rem;">External</span>'
+        : '';
+      document.getElementById('agent-ui-title').innerHTML = schema.icon + ' ' + schema.name + typeBadge;
+      document.getElementById('agent-ui-hint').innerHTML =
+        'Using: <strong style="color:var(--primary)">' + schema.name + '</strong>'
+        + (schema.executionType === 'External' ? ' <span style="font-size:0.7rem; color:#f59e0b;">(CLI/Script)</span>' : '');
+
+      // Build form fields
+      const container = document.getElementById('agent-form-container');
+      const fields = schema.fields;
+      let html = '<div class="form-grid">';
+
+      for (const f of fields) {
+        const fullClass = (f.type === 'textarea' || f.type === 'file') ? ' full' : '';
+        html += '<div class="form-field' + fullClass + '">';
+        html += '<label>' + f.label + (f.required ? ' <span style="color:var(--danger)">*</span>' : '') + '</label>';
+
+        if (f.type === 'file') {
+          html += '<div class="file-drop" onclick="this.querySelector(\'input\').click()">'
+            + '📁 ' + (f.placeholder || 'Drop file here or click to browse')
+            + '<input type="file" accept="' + (f.accept || '') + '" style="display:none" />'
+            + '</div>';
+        } else if (f.type === 'textarea') {
+          html += '<textarea placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '">'
+            + (f.default || '') + '</textarea>';
+        } else if (f.type === 'select') {
+          html += '<select>';
+          for (const opt of (f.options || [])) {
+            const sel = f.default === opt ? ' selected' : '';
+            html += '<option' + sel + '>' + opt + '</option>';
+          }
+          html += '</select>';
+        } else if (f.type === 'toggle') {
+          const checked = f.default === 'true' ? ' checked' : '';
+          html += '<div class="toggle-row"><input type="checkbox"' + checked + ' style="width:auto;margin:0;" />'
+            + '<span style="font-size:0.85rem;">' + f.label + '</span></div>';
+        } else if (f.type === 'url') {
+          html += '<input type="url" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '"'
+            + (f.default ? ' value="' + f.default + '"' : '') + ' />';
+        } else {
+          html += '<input type="text" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '"'
+            + (f.default ? ' value="' + f.default + '"' : '') + ' />';
+        }
+
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+
+      // Build quick actions
+      const qaContainer = document.getElementById('quick-actions-container');
+      let qaHtml = '';
+      for (const qa of (schema.quickActions || [])) {
+        qaHtml += '<div class="card" style="cursor:pointer; margin-bottom:0; text-align:center; padding:1rem;">'
+          + '<div style="font-size:1.5rem; margin-bottom:0.25rem;">' + qa.icon + '</div>'
+          + '<div style="font-size:0.85rem; font-weight:600;">' + qa.title + '</div>'
+          + '<div style="font-size:0.75rem; color:var(--text-muted);">' + qa.desc + '</div>'
+          + '</div>';
+      }
+      qaContainer.innerHTML = qaHtml;
+    }
+
+    // ── Page navigation ──
+    function showPage(name) {
+      document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
+      document.getElementById('page-' + name).classList.add('active');
+      document.querySelectorAll('header nav a').forEach(el => el.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+    function showSubTab(id, btn) {
+      btn.closest('.tab-section').querySelectorAll('.sub-section').forEach(el => el.style.display = 'none');
+      document.getElementById(id).style.display = 'block';
+      btn.closest('.sub-tabs').querySelectorAll('.sub-tab').forEach(el => el.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    // ── Agent card click → switch UI ──
+    document.getElementById('process-agent-grid').addEventListener('click', function(e) {
+      const card = e.target.closest('.agent-card');
+      if (!card) return;
+      this.querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      const agentKey = card.dataset.agent;
+      renderAgentUI(agentKey);
+    });
+
+    // Agent cards on other pages (non-process) — simple select
+    document.querySelectorAll('.agent-grid:not(#process-agent-grid)').forEach(grid => {
+      grid.addEventListener('click', function(e) {
+        const card = e.target.closest('.agent-card');
+        if (!card) return;
+        this.querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+    });
+
+    // ── Toggle LLM / External on Create Agent form ──
+    function toggleExecType(type) {
+      const llmFields = document.getElementById('create-llm-fields');
+      const extFields = document.getElementById('create-external-fields');
+      const btnLlm = document.getElementById('btn-type-llm');
+      const btnExt = document.getElementById('btn-type-ext');
+      if (type === 'external') {
+        llmFields.style.display = 'none';
+        extFields.style.display = 'block';
+        btnLlm.className = 'btn btn-sm btn-outline';
+        btnExt.className = 'btn btn-sm';
+        btnExt.style.background = 'var(--primary)';
+        btnExt.style.color = '#fff';
+        btnLlm.style.background = '';
+        btnLlm.style.color = '';
+      } else {
+        llmFields.style.display = 'block';
+        extFields.style.display = 'none';
+        btnExt.className = 'btn btn-sm btn-outline';
+        btnLlm.className = 'btn btn-sm';
+        btnLlm.style.background = 'var(--primary)';
+        btnLlm.style.color = '#fff';
+        btnExt.style.background = '';
+        btnExt.style.color = '';
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // ── Pipeline definitions & state ──
+    // ══════════════════════════════════════════════════════════════
+    const availableAgents = [
+      { id: 'data-analyst', icon: '🧠', name: 'Data Analyst' },
+      { id: 'api-integrator', icon: '🚀', name: 'API Integrator' },
+      { id: 'report-writer', icon: '📝', name: 'Report Writer' },
+      { id: 'data-validator', icon: '🔍', name: 'Data Validator' },
+      { id: 'python-etl', icon: '🐍', name: 'Python ETL', external: true },
+      { id: 'cli-tool', icon: '⌨️', name: 'CLI Linter', external: true },
+    ];
+
+    let pipelineSteps = ['data-analyst', 'data-validator', 'api-integrator'];
+
+    let savedPipelines = [
+      { name: 'Excel-to-API Pipeline', steps: ['data-analyst', 'data-validator', 'api-integrator'], selfCorrection: true },
+      { name: 'ETL + Validate', steps: ['python-etl', 'data-validator'], selfCorrection: true },
+    ];
+
+    // ── Pipeline schemas (for Process page) ──
+    const pipelineSchemas = {
+      'excel-to-api': {
+        icon: '🔗', name: 'Excel-to-API Pipeline', isPipeline: true,
+        steps: ['data-analyst', 'data-validator', 'api-integrator'],
+        selfCorrection: true,
+        fields: [
+          { key: 'file', label: 'Input Data File', type: 'file', accept: '.xlsx,.csv,.json', placeholder: 'Drop your file here or click to browse', required: true },
+          { key: 'task', label: 'Task Description', type: 'textarea', placeholder: 'Describe the end-to-end workflow...\n• What data to parse\n• Validation rules\n• Where to push results' },
+          { key: 'endpoint', label: 'API Endpoint', type: 'url', placeholder: 'https://api.example.com/v2/records' },
+          { key: 'outputFormat', label: 'Output Format', type: 'select', options: ['JSON', 'CSV', 'SQL Statements'] },
+        ],
+        quickActions: [
+          { icon: '📊', title: 'Parse + Validate + Push', desc: 'Full 3-step pipeline' },
+          { icon: '🔄', title: 'Re-run Last', desc: 'Same input, fresh run' },
+        ]
+      },
+      'etl-validate': {
+        icon: '🔗', name: 'ETL + Validate', isPipeline: true,
+        steps: ['python-etl', 'data-validator'],
+        selfCorrection: true,
+        fields: [
+          { key: 'data', label: 'Input Data', type: 'textarea', placeholder: 'Paste data or describe the data source...', required: true },
+          { key: 'params', label: 'ETL Parameters (JSON)', type: 'textarea', placeholder: '{"mode": "transform", "outputFormat": "csv"}' },
+          { key: 'rules', label: 'Validation Rules', type: 'textarea', placeholder: 'Describe validation rules for the output...' },
+        ],
+        quickActions: [
+          { icon: '🐍', title: 'Run ETL + Validate', desc: 'Full 2-step pipeline' },
+          { icon: '📋', title: 'Validate Only', desc: 'Skip ETL, validate input' },
+        ]
+      },
+    };
+
+    // ── Render pipeline builder (Agents page) ──
+    function renderPipelineBuilder() {
+      const container = document.getElementById('pipeline-builder');
+      let html = '';
+      pipelineSteps.forEach((stepId, idx) => {
+        const agent = availableAgents.find(a => a.id === stepId);
+        if (!agent) return;
+        const extBadge = agent.external ? ' <span style="font-size:0.6rem; color:#f59e0b;">EXT</span>' : '';
+        html += '<div class="pipeline-node" style="position:relative;">' + agent.icon + ' ' + agent.name + extBadge
+          + ' <button onclick="removePipelineStep(' + idx + ')" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:0.75rem; margin-left:4px; padding:0;" title="Remove">✕</button>'
+          + '</div>';
+        html += '<span class="pipeline-arrow">→</span>';
+      });
+      // Add step dropdown
+      html += '<div style="position:relative; display:inline-block;">'
+        + '<button class="pipeline-add" onclick="toggleAgentPicker()">+ Add step</button>'
+        + '<div id="agent-picker" style="display:none; position:absolute; top:100%; left:0; z-index:10; background:var(--surface); border:1px solid var(--border); border-radius:0.5rem; min-width:200px; margin-top:4px; box-shadow:0 4px 12px rgba(0,0,0,0.3);">';
+      for (const a of availableAgents) {
+        const ext = a.external ? ' <span style="font-size:0.65rem; color:#f59e0b;">(External)</span>' : '';
+        html += '<div class="agent-picker-item" onclick="addPipelineStep(\'' + a.id + '\')" style="padding:0.5rem 0.75rem; cursor:pointer; font-size:0.8rem; border-bottom:1px solid var(--border); transition:background 0.1s;"'
+          + ' onmouseenter="this.style.background=\'rgba(224,120,80,0.1)\'" onmouseleave="this.style.background=\'transparent\'">'
+          + a.icon + ' ' + a.name + ext + '</div>';
+      }
+      html += '</div></div>';
+      container.innerHTML = html;
+    }
+
+    function toggleAgentPicker() {
+      const picker = document.getElementById('agent-picker');
+      picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function addPipelineStep(agentId) {
+      pipelineSteps.push(agentId);
+      document.getElementById('agent-picker').style.display = 'none';
+      renderPipelineBuilder();
+    }
+
+    function removePipelineStep(idx) {
+      pipelineSteps.splice(idx, 1);
+      renderPipelineBuilder();
+    }
+
+    function clearPipeline() {
+      pipelineSteps = [];
+      renderPipelineBuilder();
+    }
+
+    function savePipeline() {
+      const name = document.getElementById('pipeline-name').value.trim();
+      if (!name) { alert('Please enter a pipeline name'); return; }
+      if (pipelineSteps.length < 2) { alert('A pipeline must have at least 2 steps'); return; }
+      const selfCorrection = document.getElementById('pipeline-self-correct').checked;
+
+      // Check if pipeline name already exists
+      const existing = savedPipelines.findIndex(p => p.name === name);
+      if (existing >= 0) {
+        savedPipelines[existing] = { name, steps: [...pipelineSteps], selfCorrection };
+      } else {
+        savedPipelines.push({ name, steps: [...pipelineSteps], selfCorrection });
+      }
+
+      renderSavedPipelines();
+      const msg = document.getElementById('pipeline-save-msg');
+      msg.style.display = 'block';
+      msg.className = 'result-box result-success';
+      msg.textContent = 'Pipeline "' + name + '" saved with ' + pipelineSteps.length + ' steps.';
+      setTimeout(() => msg.style.display = 'none', 3000);
+    }
+
+    function renderSavedPipelines() {
+      const list = document.getElementById('saved-pipelines-list');
+      if (!list) return;
+      if (savedPipelines.length === 0) {
+        list.innerHTML = '<li style="color:var(--text-muted); font-size:0.85rem; padding:0.75rem 0;">No saved pipelines yet. Compose one above.</li>';
+        return;
+      }
+      let html = '';
+      savedPipelines.forEach((p, idx) => {
+        const stepNames = p.steps.map(sid => {
+          const a = availableAgents.find(x => x.id === sid);
+          return a ? a.icon + ' ' + a.name : sid;
+        }).join(' → ');
+        const scBadge = p.selfCorrection
+          ? '<span class="badge" style="background:rgba(34,197,94,0.15); color:var(--success); margin-left:6px;">Self-correction</span>'
+          : '';
+        html += '<li>'
+          + '<span style="display:flex; flex-direction:column; gap:2px;">'
+          + '<span style="font-weight:600; font-size:0.85rem;">🔗 ' + p.name + scBadge + '</span>'
+          + '<span style="font-size:0.75rem; color:var(--text-muted);">' + stepNames + '</span>'
+          + '</span>'
+          + '<span style="display:flex; gap:0.5rem;">'
+          + '<button class="btn btn-sm btn-primary" onclick="loadPipelineForEdit(' + idx + ')">Edit</button>'
+          + '<button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);" onclick="deletePipeline(' + idx + ')">Delete</button>'
+          + '</span>'
+          + '</li>';
+      });
+      list.innerHTML = html;
+    }
+
+    function loadPipelineForEdit(idx) {
+      const p = savedPipelines[idx];
+      if (!p) return;
+      document.getElementById('pipeline-name').value = p.name;
+      document.getElementById('pipeline-self-correct').checked = p.selfCorrection;
+      pipelineSteps = [...p.steps];
+      renderPipelineBuilder();
+      // Scroll to builder
+      document.getElementById('pipeline-builder').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function deletePipeline(idx) {
+      savedPipelines.splice(idx, 1);
+      renderSavedPipelines();
+    }
+
+    // ── Pipeline selection on Process page ──
+    function selectPipeline(pipelineKey) {
+      // Deselect all agent cards
+      document.getElementById('process-agent-grid').querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
+      // Select pipeline card
+      document.getElementById('process-pipeline-grid').querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
+      const card = document.querySelector('[data-pipeline="' + pipelineKey + '"]');
+      if (card) card.classList.add('selected');
+
+      const schema = pipelineSchemas[pipelineKey];
+      if (!schema) return;
+
+      // Render pipeline chain visualization
+      const stepsHtml = schema.steps.map(sid => {
+        const a = availableAgents.find(x => x.id === sid);
+        return a ? a.icon + ' ' + a.name : sid;
+      }).join(' <span style="color:var(--text-muted);">→</span> ');
+
+      document.getElementById('agent-ui-title').innerHTML = schema.icon + ' ' + schema.name
+        + ' <span class="badge" style="background:rgba(224,120,80,0.15); color:var(--primary); margin-left:6px; font-size:0.65rem;">Pipeline</span>';
+      document.getElementById('agent-ui-hint').innerHTML =
+        'Running: <strong style="color:var(--primary)">' + schema.name + '</strong>'
+        + ' <span style="font-size:0.7rem; color:var(--text-muted);">(' + schema.steps.length + ' steps' + (schema.selfCorrection ? ', self-correction on' : '') + ')</span>';
+
+      // Build form: pipeline visualization + fields
+      const container = document.getElementById('agent-form-container');
+      let html = '<div style="padding:0.75rem; background:rgba(224,120,80,0.05); border:1px solid var(--border); border-radius:0.5rem; margin-bottom:1rem;">'
+        + '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.25rem;">Pipeline steps:</div>'
+        + '<div style="font-size:0.85rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">' + stepsHtml + '</div>'
+        + '</div>';
+
+      html += '<div class="form-grid">';
+      for (const f of schema.fields) {
+        const fullClass = (f.type === 'textarea' || f.type === 'file') ? ' full' : '';
+        html += '<div class="form-field' + fullClass + '">';
+        html += '<label>' + f.label + (f.required ? ' <span style="color:var(--danger)">*</span>' : '') + '</label>';
+        if (f.type === 'file') {
+          html += '<div class="file-drop" onclick="this.querySelector(\'input\').click()">'
+            + '📁 ' + (f.placeholder || 'Drop file here or click to browse')
+            + '<input type="file" accept="' + (f.accept || '') + '" style="display:none" /></div>';
+        } else if (f.type === 'textarea') {
+          html += '<textarea placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '"></textarea>';
+        } else if (f.type === 'select') {
+          html += '<select>';
+          for (const opt of (f.options || [])) html += '<option>' + opt + '</option>';
+          html += '</select>';
+        } else if (f.type === 'url') {
+          html += '<input type="url" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '" />';
+        } else {
+          html += '<input type="text" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '" />';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+
+      // Update run button
+      const runBtnArea = container.closest('.card').querySelector('.btn-primary');
+      if (runBtnArea) runBtnArea.textContent = '▶ Run Pipeline';
+
+      // Quick actions
+      const qaContainer = document.getElementById('quick-actions-container');
+      let qaHtml = '';
+      for (const qa of (schema.quickActions || [])) {
+        qaHtml += '<div class="card" style="cursor:pointer; margin-bottom:0; text-align:center; padding:1rem;">'
+          + '<div style="font-size:1.5rem; margin-bottom:0.25rem;">' + qa.icon + '</div>'
+          + '<div style="font-size:0.85rem; font-weight:600;">' + qa.title + '</div>'
+          + '<div style="font-size:0.75rem; color:var(--text-muted);">' + qa.desc + '</div>'
+          + '</div>';
+      }
+      qaContainer.innerHTML = qaHtml;
+    }
+
+    // ── Pipeline grid click handler ──
+    document.getElementById('process-pipeline-grid')?.addEventListener('click', function(e) {
+      const card = e.target.closest('.agent-card');
+      if (!card) return;
+      const pipelineKey = card.dataset.pipeline;
+      if (pipelineKey) selectPipeline(pipelineKey);
+    });
+
+    // ── Update agent card click to deselect pipelines ──
+    const origAgentGridHandler = document.getElementById('process-agent-grid');
+    origAgentGridHandler.addEventListener('click', function(e) {
+      const card = e.target.closest('.agent-card');
+      if (!card) return;
+      // Deselect pipeline cards
+      document.getElementById('process-pipeline-grid')?.querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
+      // Reset run button text
+      const runBtn = document.querySelector('#agent-dynamic-ui .btn-primary');
+      if (runBtn) runBtn.textContent = '▶ Run Task';
+    }, true);
+
+    // Close agent picker when clicking outside
+    document.addEventListener('click', function(e) {
+      const picker = document.getElementById('agent-picker');
+      if (picker && !e.target.closest('#pipeline-builder')) {
+        picker.style.display = 'none';
+      }
+    });
+
+    // ── Initialize ──
+    renderAgentUI('data-analyst');
+    renderPipelineBuilder();
+    renderSavedPipelines();
+  </script>
+</body>
+</html>

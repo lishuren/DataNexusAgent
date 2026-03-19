@@ -71,7 +71,7 @@ public sealed class AnalystAgent(
         };
 
         var response = await aiClient.CompleteAsync(options, ct);
-        var analysisOutput = response.Value.Choices[0].Message.Content;
+        var analysisOutput = response.Value.Content;
 
         var appliedSkills = string.Join(", ", skills.Select(s => s.Name));
         logger.LogInformation(
@@ -113,7 +113,7 @@ public sealed class AnalystAgent(
         };
 
         var response = await aiClient.CompleteAsync(options, ct);
-        var analysisOutput = response.Value.Choices[0].Message.Content;
+        var analysisOutput = response.Value.Content;
 
         return new AnalysisResult(
             true, analysisOutput,

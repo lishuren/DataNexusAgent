@@ -63,7 +63,7 @@ public sealed class ExecutorAgent(
         };
 
         var aiResponse = await aiClient.CompleteAsync(options, ct);
-        var validationOutput = aiResponse.Value.Choices[0].Message.Content;
+        var validationOutput = aiResponse.Value.Content;
 
         // 3. Detect correction requests from the AI response
         if (validationOutput.Contains("\"requiresCorrection\": true", StringComparison.OrdinalIgnoreCase) ||

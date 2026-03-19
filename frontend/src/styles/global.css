@@ -1,13 +1,14 @@
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --border: #2a2d3a;
-  --text: #e4e4e7;
-  --text-muted: #9ca3af;
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --success: #22c55e;
-  --danger: #ef4444;
+  --bg: #1a1018;
+  --surface: #251c24;
+  --border: #3d2e3a;
+  --text: #f0e6eb;
+  --text-muted: #b09aa8;
+  --primary: #e07850;
+  --primary-hover: #f09070;
+  --accent: #c06080;
+  --success: #5ab878;
+  --danger: #e05555;
 }
 
 * {
@@ -41,12 +42,12 @@ header {
 
 header h1 {
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 header nav {
   display: flex;
-  gap: 1rem;
+  gap: 1.25rem;
   align-items: center;
 }
 
@@ -54,11 +55,18 @@ header nav a {
   color: var(--text-muted);
   text-decoration: none;
   font-size: 0.875rem;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
 }
 
-header nav a:hover,
-header nav a.active {
+header nav a:hover {
   color: var(--primary-hover);
+}
+
+header nav a.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
 }
 
 main {
@@ -80,6 +88,7 @@ main {
 .card h2 {
   font-size: 1rem;
   margin-bottom: 0.75rem;
+  font-weight: 600;
 }
 
 .btn {
@@ -114,6 +123,12 @@ main {
   font-size: 0.8rem;
 }
 
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
 input,
 textarea,
 select {
@@ -124,11 +139,18 @@ select {
   border-radius: 0.5rem;
   color: var(--text);
   font-size: 0.875rem;
+  font-family: inherit;
   margin-bottom: 0.75rem;
 }
 
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
 textarea {
-  min-height: 120px;
+  min-height: 100px;
   resize: vertical;
 }
 
@@ -142,12 +164,12 @@ textarea {
 }
 
 .badge-public {
-  background: rgba(34, 197, 94, 0.15);
+  background: rgba(90, 184, 120, 0.15);
   color: var(--success);
 }
 
 .badge-private {
-  background: rgba(99, 102, 241, 0.15);
+  background: rgba(224, 120, 80, 0.15);
   color: var(--primary);
 }
 
@@ -176,16 +198,262 @@ textarea {
 }
 
 .result-success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(90, 184, 120, 0.1);
+  border: 1px solid rgba(90, 184, 120, 0.3);
+  color: var(--success);
 }
 
 .result-error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(224, 85, 85, 0.1);
+  border: 1px solid rgba(224, 85, 85, 0.3);
 }
 
 .user-info {
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-right: 6px;
+}
+
+.form-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Agent cards */
+.agent-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.agent-card:hover {
+  border-color: var(--primary);
+}
+
+.agent-card.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(224, 120, 80, 0.25);
+}
+
+.agent-card .agent-icon {
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.agent-card .agent-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+
+.agent-card .agent-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.agent-card .agent-meta {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.agent-card .agent-meta span {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(224, 120, 80, 0.1);
+  color: var(--primary);
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+/* Dynamic agent UI form */
+.dynamic-form .form-field {
+  margin-bottom: 0.75rem;
+}
+
+.dynamic-form label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.dynamic-form .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.dynamic-form .form-field.full {
+  grid-column: 1 / -1;
+}
+
+.dynamic-form .file-drop {
+  border: 2px dashed var(--border);
+  border-radius: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dynamic-form .file-drop:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.dynamic-form .toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dynamic-form .toggle-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+/* Pipeline builder */
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 1rem 0;
+}
+
+.pipeline-node {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(224, 120, 80, 0.1);
+  border: 1px solid var(--primary);
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--primary);
+}
+
+.pipeline-arrow {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+.pipeline-add {
+  border: 1px dashed var(--border);
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+}
+
+.pipeline-add:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Sub-tabs (marketplace) */
+.sub-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.sub-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.sub-tab:hover {
+  color: var(--text);
+}
+
+.sub-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Quick actions */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.quick-action-card {
+  cursor: pointer;
+  text-align: center;
+  padding: 1rem;
+  margin-bottom: 0;
+}
+
+/* Protocol info box */
+.protocol-info {
+  padding: 0.75rem;
+  background: rgba(224, 120, 80, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Agent picker dropdown */
+.agent-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  min-width: 200px;
+  margin-top: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.agent-picker-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.agent-picker-item:hover {
+  background: rgba(224, 120, 80, 0.1);
+}
+
+.agent-picker-item:last-child {
+  border-bottom: none;
 }

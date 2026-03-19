@@ -6,6 +6,8 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
     : DbContext(options)
 {
     public DbSet<SkillEntity> Skills => Set<SkillEntity>();
+    public DbSet<AgentEntity> Agents => Set<AgentEntity>();
+    public DbSet<PipelineEntity> Pipelines => Set<PipelineEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,6 +23,45 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
             entity.Property(e => e.Scope)
                   .HasConversion<string>()
                   .HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<AgentEntity>(entity =>
+        {
+            entity.ToTable("agents");
+
+            entity.HasIndex(e => new { e.Name, e.OwnerId })
+                  .IsUnique();
+
+            entity.HasIndex(e => e.Scope);
+
+            entity.Property(e => e.Scope)
+                  .HasConversion<string>()
+                  .HasMaxLength(20);
+
+            entity.Property(e => e.ExecutionType)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .HasDefaultValue(AgentExecutionType.Llm);
+
+            entity.Property(e => e.TimeoutSeconds)
+                  .HasDefaultValue(30);
+        });
+
+        modelBuilder.Entity<PipelineEntity>(entity =>
+        {
+            entity.ToTable("pipelines");
+
+            entity.HasIndex(e => new { e.Name, e.OwnerId })
+                  .IsUnique();
+
+            entity.HasIndex(e => e.Scope);
+
+            entity.Property(e => e.Scope)
+                  .HasConversion<string>()
+                  .HasMaxLength(20);
+
+            entity.Property(e => e.MaxCorrectionAttempts)
+                  .HasDefaultValue(3);
         });
     }
 }

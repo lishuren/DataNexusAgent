@@ -49,7 +49,7 @@ public sealed class SkillRegistry(
     /// Uses C# 13 params collections for optional skill-name filtering.
     /// </summary>
     public async Task<IReadOnlyList<SkillDefinition>> GetSkillsForUserAsync(
-        string userId, CancellationToken ct = default, params ReadOnlySpan<string> skillNames)
+        string userId, CancellationToken ct = default, params string[] skillNames)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
