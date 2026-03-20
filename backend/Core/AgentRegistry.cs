@@ -100,6 +100,100 @@ public sealed class AgentRegistry(
         return entity.ToDefinition();
     }
 
+    public async Task<AgentDefinition> UpdateAgentAsync(
+        string userId, int agentId, string name, string icon, string description,
+        string systemPrompt, string? uiSchema, string plugins, string skills,
+        AgentExecutionType executionType = AgentExecutionType.Llm,
+        string? command = null, string? arguments = null,
+        string? workingDirectory = null, int timeoutSeconds = 30,
+        CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Agents.FirstOrDefaultAsync(
+            a => a.Id == agentId && a.OwnerId == userId && a.Scope == SkillScope.Private && !a.IsBuiltIn, ct)
+            ?? throw new InvalidOperationException($"Agent {agentId} not found for user '{userId}'");
+
+        entity.Name = name;
+        entity.Icon = icon;
+        entity.Description = description;
+        entity.ExecutionType = executionType;
+        entity.SystemPrompt = systemPrompt;
+        entity.UiSchema = uiSchema ?? entity.UiSchema;
+        entity.Plugins = plugins;
+        entity.Skills = skills;
+        entity.TimeoutSeconds = timeoutSeconds;
+        entity.Command = executionType == AgentExecutionType.External ? command : null;
+        entity.Arguments = executionType == AgentExecutionType.External ? arguments : null;
+        entity.WorkingDirectory = executionType == AgentExecutionType.External ? workingDirectory : null;
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Updated {Type} agent '{AgentName}'",
+            userId, executionType, name);
+        return entity.ToDefinition();
+    }
+
+    public async Task DeleteAgentAsync(string userId, int agentId, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Agents.FirstOrDefaultAsync(
+            a => a.Id == agentId && a.OwnerId == userId && a.Scope == SkillScope.Private && !a.IsBuiltIn, ct)
+            ?? throw new InvalidOperationException($"Agent {agentId} not found for user '{userId}'");
+
+        db.Agents.Remove(entity);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Deleted agent '{AgentName}'",
+            userId, entity.Name);
+    }
+
+    public async Task<AgentDefinition> CloneAgentAsync(
+        string userId, int agentId, string newName, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var source = await db.Agents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct)
+            ?? throw new InvalidOperationException($"Agent {agentId} not found");
+
+        if (source.Scope != SkillScope.Public && !string.Equals(source.OwnerId, userId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Agent {agentId} not available for user '{userId}'");
+
+        var entity = new AgentEntity
+        {
+            Name = newName,
+            Icon = source.Icon,
+            Description = source.Description,
+            ExecutionType = source.ExecutionType,
+            SystemPrompt = source.SystemPrompt,
+            Command = source.Command,
+            Arguments = source.Arguments,
+            WorkingDirectory = source.WorkingDirectory,
+            TimeoutSeconds = source.TimeoutSeconds,
+            UiSchema = source.UiSchema,
+            Plugins = source.Plugins,
+            Skills = source.Skills,
+            Scope = SkillScope.Private,
+            OwnerId = userId,
+            IsBuiltIn = false
+        };
+
+        db.Agents.Add(entity);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Cloned agent '{AgentName}' as '{CloneName}'",
+            userId, source.Name, newName);
+        return entity.ToDefinition();
+    }
+
     public async Task<AgentDefinition> PublishAgentAsync(
         string userId, int agentId, CancellationToken ct = default)
     {
@@ -111,12 +205,37 @@ public sealed class AgentRegistry(
             ?? throw new InvalidOperationException($"Agent {agentId} not found for user '{userId}'");
 
         entity.Scope = SkillScope.Public;
+        entity.PublishedByUserId = userId;
         entity.OwnerId = null;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation("[User: {UserId}] Published agent '{AgentName}' to public", userId, entity.Name);
+        return entity.ToDefinition();
+    }
+
+    public async Task<AgentDefinition> UnpublishAgentAsync(
+        string userId, int agentId, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Agents.FirstOrDefaultAsync(
+            a => a.Id == agentId && a.Scope == SkillScope.Public, ct)
+            ?? throw new InvalidOperationException($"Agent {agentId} not found");
+
+        if (!string.Equals(entity.PublishedByUserId, userId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Agent {agentId} not owned by user '{userId}'");
+
+        entity.Scope = SkillScope.Private;
+        entity.OwnerId = userId;
+        entity.PublishedByUserId = null;
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("[User: {UserId}] Unpublished agent '{AgentName}'", userId, entity.Name);
         return entity.ToDefinition();
     }
 

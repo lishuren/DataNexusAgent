@@ -75,6 +75,9 @@ public sealed class AgentEntity
     [MaxLength(200)]
     public string? OwnerId { get; set; }
 
+    [MaxLength(200)]
+    public string? PublishedByUserId { get; set; }
+
     public bool IsBuiltIn { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -84,7 +87,7 @@ public sealed class AgentEntity
     public AgentDefinition ToDefinition() => new(
         Id, Name, Icon, Description, ExecutionType, SystemPrompt,
         Command, Arguments, WorkingDirectory, TimeoutSeconds,
-        UiSchema, Plugins, Skills, Scope, OwnerId, IsBuiltIn);
+        UiSchema, Plugins, Skills, Scope, OwnerId, PublishedByUserId, IsBuiltIn);
 }
 
 public sealed record AgentDefinition(
@@ -103,6 +106,7 @@ public sealed record AgentDefinition(
     string Skills,
     SkillScope Scope,
     string? OwnerId,
+    string? PublishedByUserId,
     bool IsBuiltIn)
 {
     public IReadOnlyList<string> PluginNames =>

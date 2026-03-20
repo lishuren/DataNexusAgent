@@ -17,9 +17,12 @@ public sealed class SkillEntity
     [MaxLength(200)]
     public string? OwnerId { get; set; }
 
+    [MaxLength(200)]
+    public string? PublishedByUserId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    public SkillDefinition ToDefinition() => new(Name, Instructions, Scope, OwnerId);
+    public SkillDefinition ToDefinition() => new(Id, Name, Instructions, Scope, OwnerId, PublishedByUserId);
 }

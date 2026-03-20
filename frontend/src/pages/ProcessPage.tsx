@@ -18,6 +18,20 @@ export default function ProcessPage() {
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const normalizeUiSchema = (schema: Agent["uiSchema"]): UiField[] => {
+    if (!schema) return [];
+    if (Array.isArray(schema)) return schema;
+    if (typeof schema === "string") {
+      try {
+        const parsed = JSON.parse(schema) as UiField[];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
   const refresh = useCallback(async () => {
     try {
       const [a, p] = await Promise.all([listAgents(), listPipelines()]);
@@ -42,12 +56,12 @@ export default function ProcessPage() {
     const cached = list.find((a) => a.id === id);
     if (cached) {
       setSelectedAgent(cached);
-      setFields(cached.uiSchema ?? []);
+      setFields(normalizeUiSchema(cached.uiSchema));
     } else {
       try {
         const a = await getAgent(id);
         setSelectedAgent(a);
-        setFields(a.uiSchema ?? []);
+        setFields(normalizeUiSchema(a.uiSchema));
       } catch { /* ignore */ }
     }
   };

@@ -25,9 +25,9 @@ export function SkillsPanel({ skills, onRefresh }: Props) {
     }
   };
 
-  const handlePublish = async (skillName: string) => {
+  const handlePublish = async (skillId: number, skillName: string) => {
     try {
-      await publishSkill(skillName);
+      await publishSkill(skillId);
       setStatus(`Skill "${skillName}" published to marketplace.`);
       onRefresh();
     } catch (e) {
@@ -46,7 +46,7 @@ export function SkillsPanel({ skills, onRefresh }: Props) {
         ) : (
           <ul className="skill-list">
             {skills.map((s) => (
-              <li key={`${s.scope}-${s.name}`}>
+              <li key={s.id}>
                 <span>
                   {s.name}{" "}
                   <span
@@ -56,7 +56,7 @@ export function SkillsPanel({ skills, onRefresh }: Props) {
                   </span>
                 </span>
                 {s.scope === "Private" && (
-                  <button className="btn btn-sm btn-primary" onClick={() => handlePublish(s.name)}>
+                  <button className="btn btn-sm btn-primary" onClick={() => handlePublish(s.id, s.name)}>
                     Publish
                   </button>
                 )}

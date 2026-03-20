@@ -25,7 +25,7 @@ public static class AgentEndpoints
                 ExecutionType = a.ExecutionType.ToString(),
                 a.Command, a.Arguments, a.WorkingDirectory, a.TimeoutSeconds,
                 a.UiSchema, a.Plugins, a.Skills,
-                Scope = a.Scope.ToString(), a.OwnerId, a.IsBuiltIn
+                Scope = a.Scope.ToString(), a.OwnerId, a.PublishedByUserId, a.IsBuiltIn
             }));
         });
 
@@ -39,7 +39,7 @@ public static class AgentEndpoints
                 ExecutionType = a.ExecutionType.ToString(),
                 a.Command, a.TimeoutSeconds,
                 a.UiSchema, a.Plugins, a.Skills,
-                Scope = a.Scope.ToString(), a.IsBuiltIn
+                Scope = a.Scope.ToString(), a.OwnerId, a.PublishedByUserId, a.IsBuiltIn
             }));
         });
 
@@ -113,6 +113,105 @@ public static class AgentEndpoints
             return Results.Ok(new { agent.Id, agent.Name, Scope = agent.Scope.ToString() });
         });
 
+        // Unpublish a public agent back to private
+        group.MapPost("/{id:int}/unpublish", async (
+            int id,
+            AgentRegistry registry,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            var agent = await registry.UnpublishAgentAsync(user.UserId, id, ct);
+            return Results.Ok(new { agent.Id, agent.Name, Scope = agent.Scope.ToString() });
+        });
+
+        // Update an existing private agent
+        group.MapPut("/{id:int}", async (
+            int id,
+            UpdateAgentRequest request,
+            AgentRegistry registry,
+            IOptions<ExternalAgentOptions> extOpts,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            if (!Enum.TryParse<AgentExecutionType>(request.ExecutionType ?? "Llm", true, out var execType))
+                return Results.BadRequest("Invalid executionType. Use 'Llm' or 'External'.");
+
+            if (execType == AgentExecutionType.External)
+            {
+                if (string.IsNullOrWhiteSpace(request.Command))
+                    return Results.BadRequest("External agents require a 'command'.");
+
+                if (!extOpts.Value.Enabled)
+                    return Results.BadRequest("External agent execution is disabled by server configuration.");
+
+                var cmdName = Path.GetFileName(request.Command);
+                var allowed = extOpts.Value.AllowedCommands.Exists(a =>
+                    string.Equals(a, request.Command, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a, cmdName, StringComparison.OrdinalIgnoreCase));
+                if (!allowed)
+                    return Results.BadRequest($"Command '{request.Command}' is not in the server allowlist.");
+            }
+
+            var timeout = Math.Clamp(request.TimeoutSeconds ?? 30, 1, extOpts.Value.MaxTimeoutSeconds);
+
+            var agent = await registry.UpdateAgentAsync(
+                user.UserId, id, request.Name, request.Icon, request.Description,
+                request.SystemPrompt ?? string.Empty, request.UiSchema,
+                request.Plugins ?? string.Empty, request.Skills ?? string.Empty,
+                execType, request.Command, request.Arguments,
+                request.WorkingDirectory, timeout, ct);
+
+            return Results.Ok(new
+            {
+                agent.Id, agent.Name,
+                ExecutionType = agent.ExecutionType.ToString(),
+                Scope = agent.Scope.ToString()
+            });
+        });
+
+        // Delete a private agent
+        group.MapDelete("/{id:int}", async (
+            int id,
+            AgentRegistry registry,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            await registry.DeleteAgentAsync(user.UserId, id, ct);
+            return Results.NoContent();
+        });
+
+        // Clone an agent (public or owned private) into a new private agent
+        group.MapPost("/{id:int}/clone", async (
+            int id,
+            CloneAgentRequest request,
+            AgentRegistry registry,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return Results.BadRequest("Name is required.");
+
+            var agent = await registry.CloneAgentAsync(user.UserId, id, request.Name, ct);
+            return Results.Created($"/api/agents/{agent.Id}", new
+            {
+                agent.Id, agent.Name,
+                ExecutionType = agent.ExecutionType.ToString(),
+                Scope = agent.Scope.ToString()
+            });
+        });
+
         return routes;
     }
 
@@ -129,4 +228,20 @@ public static class AgentEndpoints
         string? Arguments,
         string? WorkingDirectory,
         int? TimeoutSeconds);
+
+    private sealed record UpdateAgentRequest(
+        string Name,
+        string Icon,
+        string Description,
+        string? SystemPrompt,
+        string? UiSchema,
+        string? Plugins,
+        string? Skills,
+        string? ExecutionType,
+        string? Command,
+        string? Arguments,
+        string? WorkingDirectory,
+        int? TimeoutSeconds);
+
+    private sealed record CloneAgentRequest(string Name);
 }

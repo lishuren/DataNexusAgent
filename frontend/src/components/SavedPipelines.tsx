@@ -5,9 +5,11 @@ interface SavedPipelinesProps {
   agents: Agent[];
   onEdit: (pipeline: Pipeline) => void;
   onDelete: (id: number) => void;
+  onClone: (pipeline: Pipeline) => void;
+  currentUserId?: string;
 }
 
-export function SavedPipelines({ pipelines, agents, onEdit, onDelete }: SavedPipelinesProps) {
+export function SavedPipelines({ pipelines, agents, onEdit, onDelete, onClone, currentUserId }: SavedPipelinesProps) {
   if (pipelines.length === 0) {
     return (
       <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", padding: "0.75rem 0" }}>
@@ -40,13 +42,18 @@ export function SavedPipelines({ pipelines, agents, onEdit, onDelete }: SavedPip
               <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{stepNames}</span>
             </span>
             <span style={{ display: "flex", gap: "0.5rem" }}>
-              <button className="btn btn-sm btn-primary" onClick={() => onEdit(p)}>Edit</button>
-              <button
-                className="btn btn-sm btn-outline btn-outline-danger"
-                onClick={() => onDelete(p.id)}
-              >
-                Delete
-              </button>
+              {p.ownerId === currentUserId && p.scope === "Private" && (
+                <button className="btn btn-sm btn-primary" onClick={() => onEdit(p)}>Edit</button>
+              )}
+              {p.ownerId === currentUserId && p.scope === "Private" && (
+                <button
+                  className="btn btn-sm btn-outline btn-outline-danger"
+                  onClick={() => onDelete(p.id)}
+                >
+                  Delete
+                </button>
+              )}
+              <button className="btn btn-sm btn-outline" onClick={() => onClone(p)}>Clone</button>
             </span>
           </li>
         );

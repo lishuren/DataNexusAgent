@@ -128,6 +128,7 @@ public sealed class PipelineRegistry(
                 $"Pipeline {pipelineId} not found for user '{userId}'");
 
         entity.Scope = SkillScope.Public;
+        entity.PublishedByUserId = userId;
         entity.OwnerId = null;
         entity.UpdatedAt = DateTime.UtcNow;
 
@@ -135,6 +136,64 @@ public sealed class PipelineRegistry(
 
         logger.LogInformation(
             "[User: {UserId}] Published pipeline '{Name}' to public", userId, entity.Name);
+
+        return entity.ToDefinition();
+    }
+
+    public async Task<PipelineDefinition> UnpublishAsync(
+        string userId, int pipelineId, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Pipelines.FirstOrDefaultAsync(
+            p => p.Id == pipelineId && p.Scope == SkillScope.Public, ct)
+            ?? throw new InvalidOperationException($"Pipeline {pipelineId} not found");
+
+        if (!string.Equals(entity.PublishedByUserId, userId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Pipeline {pipelineId} not owned by user '{userId}'");
+
+        entity.Scope = SkillScope.Private;
+        entity.OwnerId = userId;
+        entity.PublishedByUserId = null;
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Unpublished pipeline '{Name}'", userId, entity.Name);
+
+        return entity.ToDefinition();
+    }
+
+    public async Task<PipelineDefinition> CloneAsync(
+        string userId, int pipelineId, string newName, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var source = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct)
+            ?? throw new InvalidOperationException($"Pipeline {pipelineId} not found");
+
+        if (source.Scope != SkillScope.Public && !string.Equals(source.OwnerId, userId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Pipeline {pipelineId} not available for user '{userId}'");
+
+        var entity = new PipelineEntity
+        {
+            Name = newName,
+            AgentIdsJson = source.AgentIdsJson,
+            EnableSelfCorrection = source.EnableSelfCorrection,
+            MaxCorrectionAttempts = source.MaxCorrectionAttempts,
+            Scope = SkillScope.Private,
+            OwnerId = userId
+        };
+
+        db.Pipelines.Add(entity);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "[User: {UserId}] Cloned pipeline '{Name}' as '{CloneName}'",
+            userId, source.Name, newName);
 
         return entity.ToDefinition();
     }

@@ -4,23 +4,41 @@ import {
   listAgents,
   listPipelines,
   publishAgent,
+  unpublishAgent,
+  deleteAgent,
+  cloneAgent,
   createPipeline,
   updatePipeline,
   deletePipeline as apiDeletePipeline,
+  clonePipeline,
 } from "@/services/api";
+import { getUserId } from "@/services/auth";
 import { AgentCard } from "@/components/AgentCard";
 import { CreateAgentForm } from "@/components/CreateAgentForm";
 import { PipelineBuilder } from "@/components/PipelineBuilder";
 import { SavedPipelines } from "@/components/SavedPipelines";
 
 export default function AgentsPage() {
+  const pluginCatalog = [
+    {
+      name: "ExcelParser",
+      description: "Parses Excel/CSV/JSON input into structured JSON for the agent.",
+    },
+    {
+      name: "OutputIntegrator",
+      description: "Validates output schema and executes API/database writes.",
+    },
+  ];
+
   const [agents, setAgents] = useState<Agent[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [pipelineName, setPipelineName] = useState("");
   const [pipelineSteps, setPipelineSteps] = useState<number[]>([]);
   const [selfCorrection, setSelfCorrection] = useState(true);
   const [editingPipelineId, setEditingPipelineId] = useState<number | null>(null);
   const [pipelineMsg, setPipelineMsg] = useState("");
+  const userId = getUserId();
 
   const refresh = useCallback(async () => {
     try {
@@ -37,6 +55,40 @@ export default function AgentsPage() {
   const handlePublish = async (id: number) => {
     try {
       await publishAgent(id);
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleUnpublish = async (id: number) => {
+    try {
+      await unpublishAgent(id);
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleEditAgent = (agent: Agent) => {
+    setEditingAgent(agent);
+  };
+
+  const handleDeleteAgent = async (id: number) => {
+    try {
+      await deleteAgent(id);
+      setEditingAgent((current) => (current?.id === id ? null : current));
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleCloneAgent = async (agent: Agent) => {
+    const name = window.prompt("Clone agent name", `${agent.name}`);
+    if (!name?.trim()) return;
+    try {
+      await cloneAgent(agent.id, name.trim());
       refresh();
     } catch {
       /* ignore */
@@ -86,6 +138,17 @@ export default function AgentsPage() {
     }
   };
 
+  const handleClonePipeline = async (pipeline: Pipeline) => {
+    const name = window.prompt("Clone pipeline name", pipeline.name);
+    if (!name?.trim()) return;
+    try {
+      await clonePipeline(pipeline.id, name.trim());
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const clearPipeline = () => {
     setPipelineSteps([]);
     setPipelineName("");
@@ -102,22 +165,76 @@ export default function AgentsPage() {
           {agents.map((a) => (
             <div key={a.id} style={{ position: "relative" }}>
               <AgentCard agent={a} />
-              {a.scope === "Private" && !a.isBuiltIn && (
+              <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: "0.35rem" }}>
+                {a.scope === "Private" && !a.isBuiltIn && a.ownerId === userId && (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => handlePublish(a.id)}
+                  >
+                    Publish
+                  </button>
+                )}
+                {a.scope === "Public" && a.publishedByUserId === userId && (
+                  <button
+                    className="btn btn-sm btn-outline"
+                    onClick={() => handleUnpublish(a.id)}
+                  >
+                    Unpublish
+                  </button>
+                )}
+                {a.ownerId === userId && a.scope === "Private" && !a.isBuiltIn && (
+                  <button
+                    className="btn btn-sm btn-outline"
+                    onClick={() => handleEditAgent(a)}
+                  >
+                    Edit
+                  </button>
+                )}
+                {a.ownerId === userId && a.scope === "Private" && !a.isBuiltIn && (
+                  <button
+                    className="btn btn-sm btn-outline btn-outline-danger"
+                    onClick={() => handleDeleteAgent(a.id)}
+                  >
+                    Delete
+                  </button>
+                )}
                 <button
-                  className="btn btn-sm btn-primary"
-                  style={{ position: "absolute", top: 8, right: 8 }}
-                  onClick={() => handlePublish(a.id)}
+                  className="btn btn-sm btn-outline"
+                  onClick={() => handleCloneAgent(a)}
                 >
-                  Publish
+                  Clone
                 </button>
-              )}
+              </div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Create Agent */}
-      <CreateAgentForm onCreated={refresh} />
+      <CreateAgentForm
+        onCreated={() => { setEditingAgent(null); refresh(); }}
+        agent={editingAgent}
+        onCancel={() => setEditingAgent(null)}
+      />
+
+      {/* Available Plugins */}
+      <div className="card">
+        <h2>🧩 Available Plugins</h2>
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          {pluginCatalog.map((p) => (
+            <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{p.name}</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{p.description}</div>
+              </div>
+              <span className="badge badge-private" style={{ alignSelf: "center" }}>Plugin</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.75rem" }}>
+          Use the plugin name exactly as shown when adding it to an agent.
+        </div>
+      </div>
 
       {/* Pipeline Builder */}
       <div className="card">
@@ -165,6 +282,8 @@ export default function AgentsPage() {
           agents={agents}
           onEdit={handleEditPipeline}
           onDelete={handleDeletePipeline}
+          onClone={handleClonePipeline}
+          currentUserId={userId}
         />
       </div>
     </>

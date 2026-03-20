@@ -28,6 +28,9 @@ public sealed class PipelineEntity
     [MaxLength(200)]
     public string? OwnerId { get; set; }
 
+    [MaxLength(200)]
+    public string? PublishedByUserId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -36,7 +39,7 @@ public sealed class PipelineEntity
         Id, Name,
         JsonSerializer.Deserialize<List<int>>(AgentIdsJson) ?? [],
         EnableSelfCorrection, MaxCorrectionAttempts,
-        Scope, OwnerId);
+        Scope, OwnerId, PublishedByUserId);
 }
 
 public sealed record PipelineDefinition(
@@ -46,4 +49,5 @@ public sealed record PipelineDefinition(
     bool EnableSelfCorrection,
     int MaxCorrectionAttempts,
     SkillScope Scope,
-    string? OwnerId);
+    string? OwnerId,
+    string? PublishedByUserId);

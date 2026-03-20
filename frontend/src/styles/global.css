@@ -72,9 +72,21 @@ header nav a.active {
 main {
   flex: 1;
   padding: 2rem;
-  max-width: 960px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   width: 100%;
+}
+
+@media (max-width: 768px) {
+  main {
+    padding: 1.5rem;
+  }
+}
+
+@media (max-width: 576px) {
+  main {
+    padding: 1rem;
+  }
 }
 
 .card {

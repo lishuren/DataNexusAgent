@@ -1,16 +1,38 @@
-import { useState } from "react";
-import { createAgent } from "@/services/api";
+import { useEffect, useState } from "react";
+import { createAgent, updateAgent } from "@/services/api";
+import type { Agent } from "@/types/api";
 
 interface CreateAgentFormProps {
   onCreated: () => void;
+  agent?: Agent | null;
+  onCancel?: () => void;
 }
 
-export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
+const pluginDisplayName = (plugin: string) => {
+  if (plugin === "InputProcessor") return "ExcelParser";
+  if (plugin === "OutputIntegrator") return "OutputIntegrator";
+  return plugin;
+};
+
+const normalizePluginName = (plugin: string) => {
+  if (plugin === "ExcelParser") return "InputProcessor";
+  if (plugin === "ActionRunner") return "OutputIntegrator";
+  return plugin;
+};
+
+const normalizeList = (value: string[] | string | null | undefined) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+};
+
+export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormProps) {
   const [execType, setExecType] = useState<"Llm" | "External">("Llm");
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("📧");
   const [description, setDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [uiSchema, setUiSchema] = useState<string | undefined>(undefined);
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [workDir, setWorkDir] = useState("");
@@ -21,9 +43,68 @@ export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
   const [skillInput, setSkillInput] = useState("");
   const [status, setStatus] = useState("");
 
+  useEffect(() => {
+    if (agent) {
+      setExecType(agent.executionType);
+      setName(agent.name);
+      setIcon(agent.icon);
+      setDescription(agent.description ?? "");
+      setSystemPrompt(agent.systemPrompt ?? "");
+      setCommand(agent.command ?? "");
+      setArgs(agent.arguments ?? "");
+      setWorkDir(agent.workingDirectory ?? "");
+      setTimeout(agent.timeoutSeconds ?? 30);
+      setPlugins(normalizeList(agent.plugins));
+      setSkills(normalizeList(agent.skills));
+      if (typeof agent.uiSchema === "string") {
+        setUiSchema(agent.uiSchema);
+      } else if (Array.isArray(agent.uiSchema)) {
+        setUiSchema(JSON.stringify(agent.uiSchema));
+      } else {
+        setUiSchema(undefined);
+      }
+      setStatus("");
+      return;
+    }
+
+    setExecType("Llm");
+    setName("");
+    setIcon("📧");
+    setDescription("");
+    setSystemPrompt("");
+    setCommand("");
+    setArgs("");
+    setWorkDir("");
+    setTimeout(30);
+    setPlugins([]);
+    setSkills([]);
+    setUiSchema(undefined);
+    setStatus("");
+  }, [agent]);
+
   const handleSubmit = async () => {
     if (!name.trim()) { setStatus("Name is required"); return; }
     try {
+      if (agent) {
+        await updateAgent(agent.id, {
+          name: name.trim(),
+          icon,
+          description,
+          executionType: execType,
+          systemPrompt: execType === "Llm" ? systemPrompt : undefined,
+          uiSchema,
+          command: execType === "External" ? command : undefined,
+          arguments: execType === "External" ? args : undefined,
+          workingDirectory: execType === "External" ? workDir || undefined : undefined,
+          timeoutSeconds: execType === "External" ? timeout : undefined,
+          plugins: plugins.join(","),
+          skills: skills.join(","),
+        });
+        setStatus(`Agent "${name}" updated.`);
+        onCreated();
+        return;
+      }
+
       await createAgent({
         name: name.trim(),
         icon,
@@ -46,8 +127,9 @@ export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
   };
 
   const addPlugin = () => {
-    if (pluginInput.trim() && !plugins.includes(pluginInput.trim())) {
-      setPlugins([...plugins, pluginInput.trim()]);
+    const normalized = normalizePluginName(pluginInput.trim());
+    if (normalized && !plugins.includes(normalized)) {
+      setPlugins([...plugins, normalized]);
       setPluginInput("");
     }
   };
@@ -61,19 +143,21 @@ export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
 
   return (
     <div className="card">
-      <h2>➕ Create Agent</h2>
+      <h2>{agent ? "✏️ Edit Agent" : "➕ Create Agent"}</h2>
 
       <div style={{ marginBottom: "0.75rem" }}>
         <label className="form-label">Execution Type</label>
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <button
             className={`btn btn-sm ${execType === "Llm" ? "btn-primary" : "btn-outline"}`}
+            type="button"
             onClick={() => setExecType("Llm")}
           >
             🤖 LLM Agent
           </button>
           <button
             className={`btn btn-sm ${execType === "External" ? "btn-primary" : "btn-outline"}`}
+            type="button"
             onClick={() => setExecType("External")}
           >
             ⌨️ External (CLI / Script)
@@ -147,7 +231,7 @@ export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
           {plugins.map((p) => (
             <span key={p} className="badge badge-private" style={{ padding: "4px 10px", cursor: "pointer" }} onClick={() => setPlugins(plugins.filter((x) => x !== p))}>
-              {p} ✕
+              {pluginDisplayName(p)} ✕
             </span>
           ))}
           <input
@@ -157,7 +241,7 @@ export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
             onChange={(e) => setPluginInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addPlugin()}
           />
-          <button className="pipeline-add" style={{ padding: "2px 8px" }} onClick={addPlugin}>+ Add</button>
+          <button className="pipeline-add" type="button" style={{ padding: "2px 8px" }} onClick={addPlugin}>+ Add</button>
         </div>
       </div>
 
@@ -176,11 +260,20 @@ export function CreateAgentForm({ onCreated }: CreateAgentFormProps) {
             onChange={(e) => setSkillInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addSkill()}
           />
-          <button className="pipeline-add" style={{ padding: "2px 8px" }} onClick={addSkill}>+ Add</button>
+          <button className="pipeline-add" type="button" style={{ padding: "2px 8px" }} onClick={addSkill}>+ Add</button>
         </div>
       </div>
 
-      <button className="btn btn-primary" onClick={handleSubmit}>Create Agent</button>
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <button className="btn btn-primary" type="button" onClick={handleSubmit}>
+          {agent ? "Save Changes" : "Create Agent"}
+        </button>
+        {agent && onCancel && (
+          <button className="btn btn-outline btn-sm" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
 
       {status && (
         <div className="result-box result-success" style={{ marginTop: "0.75rem" }}>{status}</div>

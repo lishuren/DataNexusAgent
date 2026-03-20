@@ -1,7 +1,9 @@
 export interface Skill {
+  id: number;
   name: string;
   scope: "Public" | "Private";
   ownerId: string | null;
+  publishedByUserId?: string | null;
   instructions?: string;
 }
 
@@ -16,11 +18,12 @@ export interface Agent {
   arguments?: string;
   workingDirectory?: string;
   timeoutSeconds: number;
-  uiSchema: UiField[];
-  plugins: string[];
-  skills: string[];
+  uiSchema: UiField[] | string | null;
+  plugins: string[] | string;
+  skills: string[] | string;
   scope: "Public" | "Private";
   ownerId: string | null;
+  publishedByUserId?: string | null;
   isBuiltIn: boolean;
 }
 
@@ -68,6 +71,7 @@ export interface Pipeline {
   maxCorrectionAttempts: number;
   scope: "Public" | "Private";
   ownerId: string | null;
+  publishedByUserId?: string | null;
 }
 
 export interface TaskHistory {

@@ -21,7 +21,7 @@ public static class PipelineEndpoints
             {
                 p.Id, p.Name, p.AgentIds,
                 p.EnableSelfCorrection, p.MaxCorrectionAttempts,
-                Scope = p.Scope.ToString(), p.OwnerId
+                Scope = p.Scope.ToString(), p.OwnerId, p.PublishedByUserId
             }));
         });
 
@@ -33,7 +33,7 @@ public static class PipelineEndpoints
             {
                 p.Id, p.Name, p.AgentIds,
                 p.EnableSelfCorrection, p.MaxCorrectionAttempts,
-                Scope = p.Scope.ToString()
+                Scope = p.Scope.ToString(), p.OwnerId, p.PublishedByUserId
             }));
         });
 
@@ -129,6 +129,42 @@ public static class PipelineEndpoints
             return Results.Ok(new { pipeline.Id, pipeline.Name, Scope = pipeline.Scope.ToString() });
         });
 
+        // Unpublish a public pipeline back to private
+        group.MapPost("/{id:int}/unpublish", async (
+            int id,
+            PipelineRegistry registry,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            var pipeline = await registry.UnpublishAsync(user.UserId, id, ct);
+            return Results.Ok(new { pipeline.Id, pipeline.Name, Scope = pipeline.Scope.ToString() });
+        });
+
+        // Clone a pipeline (public or owned private) into a new private pipeline
+        group.MapPost("/{id:int}/clone", async (
+            int id,
+            ClonePipelineRequest request,
+            PipelineRegistry registry,
+            UserContext user,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return Results.BadRequest("Pipeline name is required.");
+
+            var pipeline = await registry.CloneAsync(user.UserId, id, request.Name, ct);
+            return Results.Created($"/api/pipelines/{pipeline.Id}", new
+            {
+                pipeline.Id, pipeline.Name,
+                Scope = pipeline.Scope.ToString()
+            });
+        });
+
         return routes;
     }
 
@@ -143,4 +179,6 @@ public static class PipelineEndpoints
         IReadOnlyList<int> AgentIds,
         bool? EnableSelfCorrection,
         int? MaxCorrectionAttempts);
+
+    private sealed record ClonePipelineRequest(string Name);
 }

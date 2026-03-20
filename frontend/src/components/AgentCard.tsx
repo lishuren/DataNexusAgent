@@ -8,6 +8,12 @@ interface AgentCardProps {
   agents?: Agent[];
 }
 
+const pluginDisplayName = (plugin: string) => {
+  if (plugin === "InputProcessor") return "ExcelParser";
+  if (plugin === "OutputIntegrator") return "OutputIntegrator";
+  return plugin;
+};
+
 export function AgentCard({ agent, pipeline, selected, onClick, agents }: AgentCardProps) {
   if (pipeline) {
     const stepNames = pipeline.agentIds.map((id) => {
@@ -41,7 +47,10 @@ export function AgentCard({ agent, pipeline, selected, onClick, agents }: AgentC
       </div>
       <div className="agent-desc">{agent.description}</div>
       <div className="agent-meta">
-        {agent.plugins?.filter(Boolean).map((p) => <span key={p}>{p}</span>)}
+        {(Array.isArray(agent.plugins) ? agent.plugins : (agent.plugins as unknown as string)?.split(","))?.filter(Boolean).map((p) => {
+          const name = p.trim();
+          return <span key={name}>{pluginDisplayName(name)}</span>;
+        })}
         {isExternal && agent.command && <span>{agent.command}</span>}
         <span>{agent.scope === "Public" ? "Built-in" : "Private"}</span>
       </div>
