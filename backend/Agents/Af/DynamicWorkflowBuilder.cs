@@ -1,71 +1,95 @@
 using DataNexus.Core;
 using DataNexus.Identity;
-using DataNexus.Plugins;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
+using System.Text;
 
 namespace DataNexus.Agents.Af;
 
 /// <summary>
 /// Builds Microsoft Agent Framework workflows at request time from DB-stored AgentDefinitions.
-/// Scoped per request so each run gets independent executor instances with their own state.
+/// Uses AgentWorkflowBuilder.BuildSequential to compose AIAgent instances into a Workflow.
 ///
-/// Pipeline shape (N agents):
-///   Entry executor handles AgentStepInput.
-///   Each subsequent executor handles AgentStepOutput from the prior step.
-///   Conditional edges only forward successful outputs; failures stop propagation.
-///   All executors auto-yield their output (ReflectingExecutor default behavior).
+/// Each AgentDefinition is mapped to a ChatClientAgent wrapping either:
+///   • AfChatClientProvider.Client  — for LLM agents (skills injected into system prompt)
+///   • ExternalProcessChatClient    — for external (CLI/script) agents
+///
+/// Skill resolution requires a DB query, so BuildAsync is async.
 /// </summary>
 public sealed class DynamicWorkflowBuilder(
     SkillRegistry skillRegistry,
-    InputProcessorPlugin inputPlugin,
-    OutputIntegratorPlugin outputPlugin,
     ExternalProcessRunner externalRunner,
     AfChatClientProvider chatClientProvider,
     ILoggerFactory loggerFactory)
 {
     /// <summary>
-    /// Builds a single-agent workflow that accepts an AgentStepInput and yields one AgentStepOutput.
+    /// Builds an AF Workflow that runs all supplied agents sequentially.
+    /// A single-agent list produces a single-step workflow; N agents produce an N-step pipeline.
     /// </summary>
-    public Workflow BuildSingleAgent(AgentDefinition agent, UserContext user)
-    {
-        var executor = CreateExecutor(agent, user);
-        return new WorkflowBuilder(executor)
-            .Build();
-    }
-
-    /// <summary>
-    /// Builds a pipeline workflow that chains N agents sequentially.
-    /// Each agent receives the previous agent's output (on success) as its input.
-    /// </summary>
-    public Workflow BuildPipeline(
-        IReadOnlyList<AgentDefinition> agents, UserContext user)
+    /// <remarks>
+    /// Plugin execution (InputProcessorPlugin / OutputIntegratorPlugin) is NOT performed here.
+    /// That is the responsibility of <see cref="AgentFrameworkExecutionRuntime"/>, which calls
+    /// this method after pre-processing input and before post-processing output.
+    /// </remarks>
+    public async Task<Workflow> BuildAsync(
+        IReadOnlyList<AgentDefinition> agents,
+        UserContext user,
+        CancellationToken ct = default)
     {
         if (agents.Count == 0)
-            throw new ArgumentException("Pipeline must contain at least one agent.", nameof(agents));
+            throw new ArgumentException("At least one agent is required.", nameof(agents));
 
-        if (agents.Count == 1)
-            return BuildSingleAgent(agents[0], user);
+        var aiAgents = new List<AIAgent>(agents.Count);
+        foreach (var def in agents)
+            aiAgents.Add(await CreateAIAgentAsync(def, user, ct));
 
-        var executors = agents.Select(a => CreateExecutor(a, user)).ToArray();
+        var name = agents.Count == 1
+            ? agents[0].Name
+            : string.Join(" → ", agents.Select(a => a.Name));
 
-        var builder = new WorkflowBuilder(executors[0]);
-
-        // Chain each executor to the next; only forward on success.
-        for (int i = 0; i < executors.Length - 1; i++)
-            builder.AddEdge<AgentStepOutput>(
-                executors[i].BindExecutor(),
-                executors[i + 1].BindExecutor(),
-                condition: o => o is not null && o.Success);
-
-        return builder.Build();
+        return AgentWorkflowBuilder.BuildSequential(name, aiAgents);
     }
 
-    private Executor CreateExecutor(AgentDefinition agent, UserContext user) =>
-        agent.ExecutionType == AgentExecutionType.External
-            ? new ExternalAgentExecutor(agent, user, externalRunner,
-                loggerFactory.CreateLogger<ExternalAgentExecutor>())
-            : new LlmAgentExecutor(agent, user, skillRegistry, inputPlugin, outputPlugin,
-                chatClientProvider.Client, loggerFactory.CreateLogger<LlmAgentExecutor>());
+    private async Task<AIAgent> CreateAIAgentAsync(
+        AgentDefinition def,
+        UserContext user,
+        CancellationToken ct)
+    {
+        IChatClient client;
+        string? instructions = null;
+
+        if (def.ExecutionType == AgentExecutionType.External)
+        {
+            client = new ExternalProcessChatClient(
+                def, user, externalRunner,
+                loggerFactory.CreateLogger<ExternalProcessChatClient>());
+        }
+        else
+        {
+            var skills = def.SkillNames.Count > 0
+                ? await skillRegistry.GetSkillsForUserAsync(user.UserId, ct, [.. def.SkillNames])
+                : await skillRegistry.GetSkillsForUserAsync(user.UserId, ct);
+
+            instructions = BuildSystemPrompt(def.SystemPrompt, skills);
+            client = chatClientProvider.Client;
+        }
+
+        return new ChatClientAgent(client, name: def.Name, instructions: instructions);
+    }
+
+    private static string BuildSystemPrompt(string agentPrompt, IReadOnlyList<SkillDefinition> skills)
+    {
+        if (skills.Count == 0) return agentPrompt;
+
+        var sb = new StringBuilder(agentPrompt);
+        sb.AppendLine().AppendLine("## Loaded Skills");
+        foreach (var skill in skills)
+        {
+            sb.AppendLine($"### {skill.Name} ({skill.Scope})");
+            sb.AppendLine(skill.Instructions);
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
 }

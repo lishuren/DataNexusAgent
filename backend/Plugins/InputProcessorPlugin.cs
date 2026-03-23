@@ -48,7 +48,7 @@ public sealed class InputProcessorPlugin(
 
         // Download from URL if the source looks like one
         if (Uri.TryCreate(source, UriKind.Absolute, out var uri) &&
-            uri.Scheme is "https" or "http")
+            uri.Scheme == Uri.UriSchemeHttps)
         {
             filePath = await DownloadToTempAsync(uri, ct);
         }

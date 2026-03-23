@@ -20,6 +20,11 @@ public sealed class AfChatClientProvider
     {
         var cfg = config.Value;
 
+        if (string.IsNullOrWhiteSpace(cfg.ApiKey))
+            throw new InvalidOperationException(
+                "GitHubModels:ApiKey is required for the Agent Framework runtime. " +
+                "Set it in appsettings or user secrets.");
+
         var clientOptions = new OpenAIClientOptions
         {
             Endpoint = new Uri(cfg.Endpoint)
@@ -29,5 +34,6 @@ public sealed class AfChatClientProvider
         _chatClient = openAiClient.GetChatClient(cfg.Model).AsIChatClient();
     }
 
+    /// <summary>Gets the shared <see cref="IChatClient"/> instance backed by GitHub Models.</summary>
     public IChatClient Client => _chatClient;
 }

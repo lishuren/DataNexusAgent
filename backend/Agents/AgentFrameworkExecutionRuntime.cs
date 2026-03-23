@@ -2,25 +2,35 @@ using DataNexus.Agents.Af;
 using DataNexus.Core;
 using DataNexus.Identity;
 using DataNexus.Models;
+using DataNexus.Plugins;
 using Microsoft.Agents.AI.Workflows;
 
 namespace DataNexus.Agents;
 
 /// <summary>
-/// IAgentExecutionRuntime implementation that uses the Microsoft Agent Framework.
-/// Replaces the legacy DataNexusEngine orchestration with typed AF workflow execution.
+/// IAgentExecutionRuntime implementation using Microsoft Agent Framework.
+/// Replaces legacy DataNexusEngine with AgentWorkflowBuilder.BuildSequential-based orchestration.
 ///
-/// ProcessAsync: single-agent workflow — entry executor handles AgentStepInput.
-/// RunPipelineAsync: chained-executor pipeline with optional self-correction retry loop.
-///   Self-correction: AF DAGs cannot have back-edges, so correction is external —
-///   if the terminal output has RequiresCorrection=true the entire pipeline re-runs
-///   with a correction hint in parameters, up to MaxCorrectionAttempts.
+/// Plugin execution is scoped to the runtime boundary, not inside the workflow:
+///   • InputProcessorPlugin  — pre-workflow: parses Excel/CSV/JSON before the first agent runs.
+///   • OutputIntegratorPlugin — post-workflow: validates schema and routes output after the last agent.
+///
+/// ProcessAsync: single-agent workflow.
+/// RunPipelineAsync: N-agent pipeline with optional self-correction retry loop.
+///   AF DAGs forbid back-edges; correction is external — the correction hint is prepended to the
+///   input string and the entire workflow re-runs, up to MaxCorrectionAttempts.
 /// </summary>
 public sealed class AgentFrameworkExecutionRuntime(
     DynamicWorkflowBuilder workflowBuilder,
     AgentRegistry agentRegistry,
+    InputProcessorPlugin inputPlugin,
+    OutputIntegratorPlugin outputPlugin,
     ILogger<AgentFrameworkExecutionRuntime> logger) : IAgentExecutionRuntime
 {
+    /// <summary>
+    /// Runs a single agent: pre-processes input via <c>InputProcessor</c> (if configured),
+    /// executes the agent workflow, then post-processes output via <c>OutputIntegrator</c> (if configured).
+    /// </summary>
     public async Task<ProcessingResult> ProcessAsync(
         ProcessingRequest request,
         UserContext user,
@@ -37,16 +47,46 @@ public sealed class AgentFrameworkExecutionRuntime(
         var agent = await agentRegistry.GetAgentByIdAsync(agentId, ct)
             ?? throw new InvalidOperationException($"Agent {agentId} not found.");
 
-        var workflow = workflowBuilder.BuildSingleAgent(agent, user);
-        var input = new AgentStepInput(
-            request.InputSource,
-            request.OutputDestination,
-            request.Parameters);
+        // Pre-workflow: run InputProcessor if agent configures it.
+        var processedInput = request.InputSource;
+        if (agent.PluginNames.Contains("InputProcessor"))
+        {
+            var pluginCtx = new PluginContext(user.UserId, request.InputSource, Metadata: request.Parameters);
+            var pluginResult = await inputPlugin.ExecuteAsync(pluginCtx, ct);
+            if (!pluginResult.Success)
+                return ProcessingResult.Fail($"Input parsing failed: {pluginResult.ErrorMessage}");
+            processedInput = pluginResult.Output;
+        }
 
-        var run = await InProcessExecution.RunAsync(workflow, input, null, ct);
-        return WorkflowResultMapper.Map(run, agent.Name);
+        // Build and run single-agent workflow.
+        var workflow = await workflowBuilder.BuildAsync([agent], user, ct);
+        await using var run = await InProcessExecution.RunAsync(workflow, processedInput, null, ct);
+        var result = WorkflowResultMapper.Map(run, agent.Name);
+
+        if (!result.Success)
+            return result;
+
+        // Post-workflow: run OutputIntegrator if agent configures it.
+        if (agent.PluginNames.Contains("OutputIntegrator"))
+        {
+            var outCtx = new PluginContext(
+                user.UserId, result.Message,
+                request.Parameters?.GetValueOrDefault("Schema"),
+                request.Parameters);
+            var outResult = await outputPlugin.ExecuteAsync(outCtx, ct);
+            if (!outResult.Success)
+                return ProcessingResult.Fail($"Output integration failed: {outResult.ErrorMessage}");
+        }
+
+        return result;
     }
 
+    /// <summary>
+    /// Runs an N-agent pipeline sequentially. Applies <c>InputProcessor</c> to the first agent
+    /// and <c>OutputIntegrator</c> to the last agent. When self-correction is enabled and
+    /// <c>OutputIntegrator</c> detects a schema mismatch, the entire workflow is retried with
+    /// a correction hint prepended to the input, up to <see cref="PipelineRequest.MaxCorrectionAttempts"/>.
+    /// </summary>
     public async Task<ProcessingResult> RunPipelineAsync(
         PipelineRequest pipeline,
         UserContext user,
@@ -57,8 +97,7 @@ public sealed class AgentFrameworkExecutionRuntime(
             user.UserId, pipeline.Name, pipeline.AgentIds.Count,
             pipeline.EnableSelfCorrection);
 
-        // Load agent definitions for all pipeline steps.
-        var agents = new List<Core.AgentDefinition>(pipeline.AgentIds.Count);
+        var agents = new List<AgentDefinition>(pipeline.AgentIds.Count);
         foreach (var id in pipeline.AgentIds)
         {
             var agent = await agentRegistry.GetAgentByIdAsync(id, ct)
@@ -70,44 +109,65 @@ public sealed class AgentFrameworkExecutionRuntime(
             ? Math.Max(1, pipeline.MaxCorrectionAttempts)
             : 1;
 
-        // Run with optional self-correction retry loop.
-        // Since AF DAGs forbid back-edges, correction is an external retry:
-        // re-run the entire pipeline with the mismatch details appended to parameters.
-        IReadOnlyDictionary<string, string>? parameters = pipeline.Parameters;
+        var firstAgent = agents[0];
+        var lastAgent = agents[^1];
+
+        // Pre-workflow: run InputProcessor on the first agent (if it configures it).
+        var processedInput = pipeline.InputSource;
+        if (firstAgent.PluginNames.Contains("InputProcessor"))
+        {
+            var pluginCtx = new PluginContext(user.UserId, pipeline.InputSource, Metadata: pipeline.Parameters);
+            var pluginResult = await inputPlugin.ExecuteAsync(pluginCtx, ct);
+            if (!pluginResult.Success)
+                return ProcessingResult.Fail($"Input parsing failed: {pluginResult.ErrorMessage}");
+            processedInput = pluginResult.Output;
+        }
+
         ProcessingResult? lastResult = null;
 
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
-            var workflow = workflowBuilder.BuildPipeline(agents, user);
-            var input = new AgentStepInput(
-                pipeline.InputSource,
-                pipeline.OutputDestination,
-                parameters);
-
-            var run = await InProcessExecution.RunAsync(workflow, input, null, ct);
+            var workflow = await workflowBuilder.BuildAsync(agents, user, ct);
+            await using var run = await InProcessExecution.RunAsync(workflow, processedInput, null, ct);
             lastResult = WorkflowResultMapper.Map(run, pipeline.Name);
 
-            if (lastResult.Warnings?.Contains("RequiresCorrection") != true)
+            if (!lastResult.Success)
                 return lastResult;
 
-            if (attempt + 1 >= maxAttempts)
+            // Post-workflow: run OutputIntegrator on the last agent (if it configures it).
+            if (lastAgent.PluginNames.Contains("OutputIntegrator"))
             {
-                logger.LogWarning(
-                    "[User: {UserId}] Pipeline '{Name}' exhausted {Max} correction attempt(s)",
-                    user.UserId, pipeline.Name, maxAttempts);
-                return lastResult;
+                var outCtx = new PluginContext(
+                    user.UserId, lastResult.Message,
+                    pipeline.Parameters?.GetValueOrDefault("Schema"),
+                    pipeline.Parameters);
+                var outResult = await outputPlugin.ExecuteAsync(outCtx, ct);
+
+                if (!outResult.Success && outResult.ErrorCode == "SCHEMA_MISMATCH")
+                {
+                    if (attempt + 1 >= maxAttempts)
+                    {
+                        logger.LogWarning(
+                            "[User: {UserId}] Pipeline '{Name}' exhausted {Max} correction attempt(s)",
+                            user.UserId, pipeline.Name, maxAttempts);
+                        return ProcessingResult.Fail(
+                            $"Schema mismatch after {maxAttempts} attempt(s): {outResult.ErrorMessage}");
+                    }
+
+                    logger.LogInformation(
+                        "[User: {UserId}] Pipeline '{Name}' requires correction — attempt {Attempt}/{Max}",
+                        user.UserId, pipeline.Name, attempt + 1, maxAttempts);
+
+                    // Prepend correction hint to input for the next attempt.
+                    processedInput = $"[Correction hint: {outResult.ErrorMessage}]\n\n{processedInput}";
+                    continue;
+                }
+
+                if (!outResult.Success)
+                    return ProcessingResult.Fail($"Output integration failed: {outResult.ErrorMessage}");
             }
 
-            logger.LogInformation(
-                "[User: {UserId}] Pipeline '{Name}' requires correction — attempt {Attempt}/{Max}",
-                user.UserId, pipeline.Name, attempt + 1, maxAttempts);
-
-            // Inject correction hint so agents can adapt on the next pass.
-            var updated = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value)
-                ?? new Dictionary<string, string>();
-            updated["_correctionHint"] = lastResult.Message;
-            updated["_correctionAttempt"] = (attempt + 1).ToString();
-            parameters = updated;
+            return lastResult;
         }
 
         return lastResult ?? ProcessingResult.Fail("Pipeline produced no result.");
