@@ -16,7 +16,7 @@ public sealed class DataNexusEngine(
     OutputIntegratorPlugin outputPlugin,
     ExternalProcessRunner externalRunner,
     IOptions<GitHubModelsConfig> modelsConfig,
-    ILogger<DataNexusEngine> logger)
+    ILogger<DataNexusEngine> logger) : IAgentExecutionRuntime
 {
     private readonly string _model = modelsConfig.Value.Model;
     private const int MaxCorrectionAttempts = 3;

@@ -1,6 +1,7 @@
 using Azure;
 using Azure.AI.Inference;
 using DataNexus.Agents;
+using DataNexus.Agents.Af;
 using DataNexus.Core;
 using DataNexus.Endpoints;
 using DataNexus.Identity;
@@ -119,7 +120,13 @@ builder.Services.AddScoped<InputProcessorPlugin>();
 builder.Services.AddScoped<OutputIntegratorPlugin>();
 
 // Agents & Engine
+builder.Services.Configure<AgentRuntimeOptions>(
+    builder.Configuration.GetSection(AgentRuntimeOptions.SectionName));
+builder.Services.AddSingleton<AfChatClientProvider>();
+builder.Services.AddScoped<DynamicWorkflowBuilder>();
 builder.Services.AddScoped<DataNexusEngine>();
+builder.Services.AddScoped<AgentFrameworkExecutionRuntime>();
+builder.Services.AddScoped<IAgentExecutionRuntime, AgentExecutionRuntimeSelector>();
 
 var app = builder.Build();
 

@@ -36,3 +36,5 @@ backend/appsettings.json
 
 # Local logs
 .logs/
+backend/datanexus.db-shm
+backend/datanexus.db-wal

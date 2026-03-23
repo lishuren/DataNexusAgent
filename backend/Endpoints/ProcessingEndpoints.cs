@@ -14,7 +14,7 @@ public static class ProcessingEndpoints
 
         group.MapPost("/", async (
             ProcessingRequest request,
-            DataNexusEngine engine,
+            IAgentExecutionRuntime runtime,
             TaskHistoryRegistry history,
             UserContext user,
             CancellationToken ct) =>
@@ -23,7 +23,7 @@ public static class ProcessingEndpoints
                 return Results.Unauthorized();
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var result = await engine.ProcessAsync(request, user, ct);
+            var result = await runtime.ProcessAsync(request, user, ct);
             sw.Stop();
 
             await history.RecordAsync(new TaskHistoryEntity
@@ -43,7 +43,7 @@ public static class ProcessingEndpoints
 
         group.MapPost("/pipeline", async (
             PipelineRequest pipeline,
-            DataNexusEngine engine,
+            IAgentExecutionRuntime runtime,
             TaskHistoryRegistry history,
             UserContext user,
             CancellationToken ct) =>
@@ -52,7 +52,7 @@ public static class ProcessingEndpoints
                 return Results.Unauthorized();
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var result = await engine.RunPipelineAsync(pipeline, user, ct);
+            var result = await runtime.RunPipelineAsync(pipeline, user, ct);
             sw.Stop();
 
             await history.RecordAsync(new TaskHistoryEntity
