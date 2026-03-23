@@ -62,6 +62,17 @@ public sealed class AgentRegistry(
         return entity?.ToDefinition();
     }
 
+    public async Task<AgentDefinition?> GetAgentByIdForUserAsync(
+        string userId, int id, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Agents.AsNoTracking().FirstOrDefaultAsync(
+            a => a.Id == id && (a.Scope == SkillScope.Public || a.OwnerId == userId), ct);
+        return entity?.ToDefinition();
+    }
+
     public async Task<AgentDefinition> CreateAgentAsync(
         string userId, string name, string icon, string description,
         string systemPrompt, string? uiSchema, string plugins, string skills,
@@ -72,6 +83,8 @@ public sealed class AgentRegistry(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        await EnsureAgentNameAvailableAsync(db, userId, name, null, ct);
 
         var entity = new AgentEntity
         {
@@ -113,7 +126,9 @@ public sealed class AgentRegistry(
 
         var entity = await db.Agents.FirstOrDefaultAsync(
             a => a.Id == agentId && a.OwnerId == userId && a.Scope == SkillScope.Private && !a.IsBuiltIn, ct)
-            ?? throw new InvalidOperationException($"Agent {agentId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Agent {agentId} not found.");
+
+        await EnsureAgentNameAvailableAsync(db, userId, name, agentId, ct);
 
         entity.Name = name;
         entity.Icon = icon;
@@ -144,7 +159,7 @@ public sealed class AgentRegistry(
 
         var entity = await db.Agents.FirstOrDefaultAsync(
             a => a.Id == agentId && a.OwnerId == userId && a.Scope == SkillScope.Private && !a.IsBuiltIn, ct)
-            ?? throw new InvalidOperationException($"Agent {agentId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Agent {agentId} not found.");
 
         db.Agents.Remove(entity);
         await db.SaveChangesAsync(ct);
@@ -161,10 +176,12 @@ public sealed class AgentRegistry(
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
 
         var source = await db.Agents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct)
-            ?? throw new InvalidOperationException($"Agent {agentId} not found");
+            ?? throw new ResourceNotFoundException($"Agent {agentId} not found.");
 
         if (source.Scope != SkillScope.Public && !string.Equals(source.OwnerId, userId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Agent {agentId} not available for user '{userId}'");
+            throw new ResourceNotFoundException($"Agent {agentId} not found.");
+
+        await EnsureAgentNameAvailableAsync(db, userId, newName, null, ct);
 
         var entity = new AgentEntity
         {
@@ -202,7 +219,7 @@ public sealed class AgentRegistry(
 
         var entity = await db.Agents.FirstOrDefaultAsync(
             a => a.Id == agentId && a.OwnerId == userId && a.Scope == SkillScope.Private, ct)
-            ?? throw new InvalidOperationException($"Agent {agentId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Agent {agentId} not found.");
 
         entity.Scope = SkillScope.Public;
         entity.PublishedByUserId = userId;
@@ -223,10 +240,12 @@ public sealed class AgentRegistry(
 
         var entity = await db.Agents.FirstOrDefaultAsync(
             a => a.Id == agentId && a.Scope == SkillScope.Public, ct)
-            ?? throw new InvalidOperationException($"Agent {agentId} not found");
+            ?? throw new ResourceNotFoundException($"Agent {agentId} not found.");
 
         if (!string.Equals(entity.PublishedByUserId, userId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Agent {agentId} not owned by user '{userId}'");
+            throw new ResourceAccessDeniedException($"You cannot unpublish this agent.");
+
+        await EnsureAgentNameAvailableAsync(db, userId, entity.Name, entity.Id, ct);
 
         entity.Scope = SkillScope.Private;
         entity.OwnerId = userId;
@@ -237,6 +256,21 @@ public sealed class AgentRegistry(
 
         logger.LogInformation("[User: {UserId}] Unpublished agent '{AgentName}'", userId, entity.Name);
         return entity.ToDefinition();
+    }
+
+    private static async Task EnsureAgentNameAvailableAsync(
+        DataNexusDbContext db,
+        string userId,
+        string name,
+        int? excludeId,
+        CancellationToken ct)
+    {
+        var exists = await db.Agents.AnyAsync(
+            a => a.OwnerId == userId && a.Name == name && (!excludeId.HasValue || a.Id != excludeId.Value),
+            ct);
+
+        if (exists)
+            throw new ResourceConflictException($"Agent name '{name}' already exists.");
     }
 
     private static IEnumerable<AgentEntity> GetBuiltInAgents() =>

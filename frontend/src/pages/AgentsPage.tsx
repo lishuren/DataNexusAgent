@@ -11,6 +11,8 @@ import {
   updatePipeline,
   deletePipeline as apiDeletePipeline,
   clonePipeline,
+  publishPipeline,
+  unpublishPipeline,
 } from "@/services/api";
 import { getUserId } from "@/services/auth";
 import { AgentCard } from "@/components/AgentCard";
@@ -143,6 +145,24 @@ export default function AgentsPage() {
     if (!name?.trim()) return;
     try {
       await clonePipeline(pipeline.id, name.trim());
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handlePublishPipeline = async (id: number) => {
+    try {
+      await publishPipeline(id);
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleUnpublishPipeline = async (id: number) => {
+    try {
+      await unpublishPipeline(id);
       refresh();
     } catch {
       /* ignore */
@@ -283,6 +303,8 @@ export default function AgentsPage() {
           onEdit={handleEditPipeline}
           onDelete={handleDeletePipeline}
           onClone={handleClonePipeline}
+          onPublish={handlePublishPipeline}
+          onUnpublish={handleUnpublishPipeline}
           currentUserId={userId}
         />
       </div>

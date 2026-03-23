@@ -44,9 +44,12 @@ public static class AgentEndpoints
         });
 
         // Get a single agent (including UI schema for rendering)
-        group.MapGet("/{id:int}", async (int id, AgentRegistry registry, CancellationToken ct) =>
+        group.MapGet("/{id:int}", async (int id, AgentRegistry registry, UserContext user, CancellationToken ct) =>
         {
-            var agent = await registry.GetAgentByIdAsync(id, ct);
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            var agent = await registry.GetAgentByIdForUserAsync(user.UserId, id, ct);
             return agent is not null ? Results.Ok(agent) : Results.NotFound();
         });
 
@@ -84,18 +87,21 @@ public static class AgentEndpoints
 
             var timeout = Math.Clamp(request.TimeoutSeconds ?? 30, 1, extOpts.Value.MaxTimeoutSeconds);
 
-            var agent = await registry.CreateAgentAsync(
-                user.UserId, request.Name, request.Icon, request.Description,
-                request.SystemPrompt ?? string.Empty, request.UiSchema,
-                request.Plugins ?? string.Empty, request.Skills ?? string.Empty,
-                execType, request.Command, request.Arguments,
-                request.WorkingDirectory, timeout, ct);
-
-            return Results.Created($"/api/agents/{agent.Id}", new
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
-                agent.Id, agent.Name,
-                ExecutionType = agent.ExecutionType.ToString(),
-                Scope = agent.Scope.ToString()
+                var agent = await registry.CreateAgentAsync(
+                    user.UserId, request.Name, request.Icon, request.Description,
+                    request.SystemPrompt ?? string.Empty, request.UiSchema,
+                    request.Plugins ?? string.Empty, request.Skills ?? string.Empty,
+                    execType, request.Command, request.Arguments,
+                    request.WorkingDirectory, timeout, ct);
+
+                return Results.Created($"/api/agents/{agent.Id}", new
+                {
+                    agent.Id, agent.Name,
+                    ExecutionType = agent.ExecutionType.ToString(),
+                    Scope = agent.Scope.ToString()
+                });
             });
         });
 
@@ -109,8 +115,11 @@ public static class AgentEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var agent = await registry.PublishAgentAsync(user.UserId, id, ct);
-            return Results.Ok(new { agent.Id, agent.Name, Scope = agent.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var agent = await registry.PublishAgentAsync(user.UserId, id, ct);
+                return Results.Ok(new { agent.Id, agent.Name, Scope = agent.Scope.ToString() });
+            });
         });
 
         // Unpublish a public agent back to private
@@ -123,8 +132,11 @@ public static class AgentEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var agent = await registry.UnpublishAgentAsync(user.UserId, id, ct);
-            return Results.Ok(new { agent.Id, agent.Name, Scope = agent.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var agent = await registry.UnpublishAgentAsync(user.UserId, id, ct);
+                return Results.Ok(new { agent.Id, agent.Name, Scope = agent.Scope.ToString() });
+            });
         });
 
         // Update an existing private agent
@@ -160,18 +172,21 @@ public static class AgentEndpoints
 
             var timeout = Math.Clamp(request.TimeoutSeconds ?? 30, 1, extOpts.Value.MaxTimeoutSeconds);
 
-            var agent = await registry.UpdateAgentAsync(
-                user.UserId, id, request.Name, request.Icon, request.Description,
-                request.SystemPrompt ?? string.Empty, request.UiSchema,
-                request.Plugins ?? string.Empty, request.Skills ?? string.Empty,
-                execType, request.Command, request.Arguments,
-                request.WorkingDirectory, timeout, ct);
-
-            return Results.Ok(new
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
-                agent.Id, agent.Name,
-                ExecutionType = agent.ExecutionType.ToString(),
-                Scope = agent.Scope.ToString()
+                var agent = await registry.UpdateAgentAsync(
+                    user.UserId, id, request.Name, request.Icon, request.Description,
+                    request.SystemPrompt ?? string.Empty, request.UiSchema,
+                    request.Plugins ?? string.Empty, request.Skills ?? string.Empty,
+                    execType, request.Command, request.Arguments,
+                    request.WorkingDirectory, timeout, ct);
+
+                return Results.Ok(new
+                {
+                    agent.Id, agent.Name,
+                    ExecutionType = agent.ExecutionType.ToString(),
+                    Scope = agent.Scope.ToString()
+                });
             });
         });
 
@@ -185,8 +200,11 @@ public static class AgentEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            await registry.DeleteAgentAsync(user.UserId, id, ct);
-            return Results.NoContent();
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                await registry.DeleteAgentAsync(user.UserId, id, ct);
+                return Results.NoContent();
+            });
         });
 
         // Clone an agent (public or owned private) into a new private agent
@@ -203,12 +221,15 @@ public static class AgentEndpoints
             if (string.IsNullOrWhiteSpace(request.Name))
                 return Results.BadRequest("Name is required.");
 
-            var agent = await registry.CloneAgentAsync(user.UserId, id, request.Name, ct);
-            return Results.Created($"/api/agents/{agent.Id}", new
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
-                agent.Id, agent.Name,
-                ExecutionType = agent.ExecutionType.ToString(),
-                Scope = agent.Scope.ToString()
+                var agent = await registry.CloneAgentAsync(user.UserId, id, request.Name, ct);
+                return Results.Created($"/api/agents/{agent.Id}", new
+                {
+                    agent.Id, agent.Name,
+                    ExecutionType = agent.ExecutionType.ToString(),
+                    Scope = agent.Scope.ToString()
+                });
             });
         });
 

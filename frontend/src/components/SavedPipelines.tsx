@@ -6,10 +6,21 @@ interface SavedPipelinesProps {
   onEdit: (pipeline: Pipeline) => void;
   onDelete: (id: number) => void;
   onClone: (pipeline: Pipeline) => void;
+  onPublish: (id: number) => void;
+  onUnpublish: (id: number) => void;
   currentUserId?: string;
 }
 
-export function SavedPipelines({ pipelines, agents, onEdit, onDelete, onClone, currentUserId }: SavedPipelinesProps) {
+export function SavedPipelines({
+  pipelines,
+  agents,
+  onEdit,
+  onDelete,
+  onClone,
+  onPublish,
+  onUnpublish,
+  currentUserId,
+}: SavedPipelinesProps) {
   if (pipelines.length === 0) {
     return (
       <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", padding: "0.75rem 0" }}>
@@ -42,6 +53,12 @@ export function SavedPipelines({ pipelines, agents, onEdit, onDelete, onClone, c
               <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{stepNames}</span>
             </span>
             <span style={{ display: "flex", gap: "0.5rem" }}>
+              {p.ownerId === currentUserId && p.scope === "Private" && (
+                <button className="btn btn-sm btn-primary" onClick={() => onPublish(p.id)}>Publish</button>
+              )}
+              {p.publishedByUserId === currentUserId && p.scope === "Public" && (
+                <button className="btn btn-sm btn-outline" onClick={() => onUnpublish(p.id)}>Unpublish</button>
+              )}
               {p.ownerId === currentUserId && p.scope === "Private" && (
                 <button className="btn btn-sm btn-primary" onClick={() => onEdit(p)}>Edit</button>
               )}

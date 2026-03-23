@@ -14,8 +14,6 @@ public sealed class SkillRegistry(
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
 
-        await db.Database.EnsureCreatedAsync(ct);
-
         if (seedPath is not null && Directory.Exists(seedPath))
         {
             foreach (var file in Directory.EnumerateFiles(seedPath, "*.md"))
@@ -89,11 +87,24 @@ public sealed class SkillRegistry(
         return entity?.ToDefinition();
     }
 
+    public async Task<SkillDefinition?> GetSkillByIdForUserAsync(
+        string userId, int id, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Skills.AsNoTracking().FirstOrDefaultAsync(
+            s => s.Id == id && (s.Scope == SkillScope.Public || s.OwnerId == userId), ct);
+        return entity?.ToDefinition();
+    }
+
     public async Task<SkillDefinition> CreateUserSkillAsync(
         string userId, string name, string instructions, CancellationToken ct = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        await EnsureSkillNameAvailableAsync(db, userId, name, null, ct);
 
         var entity = new SkillEntity
         {
@@ -118,11 +129,9 @@ public sealed class SkillRegistry(
 
         var entity = await db.Skills.FirstOrDefaultAsync(
             s => s.Id == skillId && s.OwnerId == userId && s.Scope == SkillScope.Private, ct)
-            ?? throw new InvalidOperationException($"Skill {skillId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Skill {skillId} not found.");
 
-        var nameExists = await db.Skills.AnyAsync(s => s.Name == name && s.Id != skillId, ct);
-        if (nameExists)
-            throw new InvalidOperationException($"Skill name '{name}' already exists");
+        await EnsureSkillNameAvailableAsync(db, userId, name, skillId, ct);
 
         entity.Name = name;
         entity.Instructions = instructions;
@@ -141,7 +150,7 @@ public sealed class SkillRegistry(
 
         var entity = await db.Skills.FirstOrDefaultAsync(
             s => s.Id == skillId && s.OwnerId == userId && s.Scope == SkillScope.Private, ct)
-            ?? throw new InvalidOperationException($"Skill {skillId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Skill {skillId} not found.");
 
         db.Skills.Remove(entity);
         await db.SaveChangesAsync(ct);
@@ -156,14 +165,12 @@ public sealed class SkillRegistry(
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
 
         var source = await db.Skills.AsNoTracking().FirstOrDefaultAsync(s => s.Id == skillId, ct)
-            ?? throw new InvalidOperationException($"Skill {skillId} not found");
+            ?? throw new ResourceNotFoundException($"Skill {skillId} not found.");
 
         if (source.Scope != SkillScope.Public && !string.Equals(source.OwnerId, userId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Skill {skillId} not available for user '{userId}'");
+            throw new ResourceNotFoundException($"Skill {skillId} not found.");
 
-        var nameExists = await db.Skills.AnyAsync(s => s.Name == newName, ct);
-        if (nameExists)
-            throw new InvalidOperationException($"Skill name '{newName}' already exists");
+        await EnsureSkillNameAvailableAsync(db, userId, newName, null, ct);
 
         var entity = new SkillEntity
         {
@@ -190,7 +197,7 @@ public sealed class SkillRegistry(
 
         var entity = await db.Skills.FirstOrDefaultAsync(
             s => s.Id == skillId && s.OwnerId == userId && s.Scope == SkillScope.Private, ct)
-            ?? throw new InvalidOperationException($"Skill {skillId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Skill {skillId} not found.");
 
         entity.Scope = SkillScope.Public;
         entity.PublishedByUserId = userId;
@@ -211,10 +218,12 @@ public sealed class SkillRegistry(
 
         var entity = await db.Skills.FirstOrDefaultAsync(
             s => s.Id == skillId && s.Scope == SkillScope.Public, ct)
-            ?? throw new InvalidOperationException($"Skill {skillId} not found");
+            ?? throw new ResourceNotFoundException($"Skill {skillId} not found.");
 
         if (!string.Equals(entity.PublishedByUserId, userId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Skill {skillId} not owned by user '{userId}'");
+            throw new ResourceAccessDeniedException($"You cannot unpublish this skill.");
+
+        await EnsureSkillNameAvailableAsync(db, userId, entity.Name, entity.Id, ct);
 
         entity.Scope = SkillScope.Private;
         entity.OwnerId = userId;
@@ -225,5 +234,20 @@ public sealed class SkillRegistry(
 
         logger.LogInformation("[User: {UserId}] Unpublished skill '{SkillName}'", userId, entity.Name);
         return entity.ToDefinition();
+    }
+
+    private static async Task EnsureSkillNameAvailableAsync(
+        DataNexusDbContext db,
+        string userId,
+        string name,
+        int? excludeId,
+        CancellationToken ct)
+    {
+        var exists = await db.Skills.AnyAsync(
+            s => s.OwnerId == userId && s.Name == name && (!excludeId.HasValue || s.Id != excludeId.Value),
+            ct);
+
+        if (exists)
+            throw new ResourceConflictException($"Skill name '{name}' already exists.");
     }
 }

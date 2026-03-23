@@ -44,9 +44,12 @@ public static class SkillsEndpoints
         });
 
         // Get a single skill (for edit prefill)
-        group.MapGet("/{id:int}", async (int id, SkillRegistry registry, CancellationToken ct) =>
+        group.MapGet("/{id:int}", async (int id, SkillRegistry registry, UserContext user, CancellationToken ct) =>
         {
-            var skill = await registry.GetSkillByIdAsync(id, ct);
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            var skill = await registry.GetSkillByIdForUserAsync(user.UserId, id, ct);
             return skill is not null ? Results.Ok(skill) : Results.NotFound();
         });
 
@@ -60,12 +63,15 @@ public static class SkillsEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var skill = await registry.CreateUserSkillAsync(
-                user.UserId, request.Name, request.Instructions, ct);
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var skill = await registry.CreateUserSkillAsync(
+                    user.UserId, request.Name, request.Instructions, ct);
 
-            return Results.Created(
-                $"/api/skills/{skill.Name}",
-                new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+                return Results.Created(
+                    $"/api/skills/{skill.Name}",
+                    new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            });
         });
 
         // Update a private skill (name + instructions)
@@ -82,8 +88,11 @@ public static class SkillsEndpoints
             if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Instructions))
                 return Results.BadRequest("Name and instructions are required.");
 
-            var skill = await registry.UpdateSkillAsync(user.UserId, id, request.Name, request.Instructions, ct);
-            return Results.Ok(new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var skill = await registry.UpdateSkillAsync(user.UserId, id, request.Name, request.Instructions, ct);
+                return Results.Ok(new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            });
         });
 
         // Delete a private skill
@@ -96,8 +105,11 @@ public static class SkillsEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            await registry.DeleteSkillAsync(user.UserId, id, ct);
-            return Results.NoContent();
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                await registry.DeleteSkillAsync(user.UserId, id, ct);
+                return Results.NoContent();
+            });
         });
 
         // Clone a skill (public or owned private) into a new private skill
@@ -114,8 +126,11 @@ public static class SkillsEndpoints
             if (string.IsNullOrWhiteSpace(request.Name))
                 return Results.BadRequest("Name is required.");
 
-            var skill = await registry.CloneSkillAsync(user.UserId, id, request.Name, ct);
-            return Results.Created($"/api/skills/{skill.Id}", new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var skill = await registry.CloneSkillAsync(user.UserId, id, request.Name, ct);
+                return Results.Created($"/api/skills/{skill.Id}", new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            });
         });
 
         // Publish a private skill to the public marketplace
@@ -128,8 +143,11 @@ public static class SkillsEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var skill = await registry.PublishSkillAsync(user.UserId, id, ct);
-            return Results.Ok(new { skill.Name, Scope = skill.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var skill = await registry.PublishSkillAsync(user.UserId, id, ct);
+                return Results.Ok(new { skill.Name, Scope = skill.Scope.ToString() });
+            });
         });
 
         // Unpublish a public skill back to private
@@ -142,8 +160,11 @@ public static class SkillsEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var skill = await registry.UnpublishSkillAsync(user.UserId, id, ct);
-            return Results.Ok(new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var skill = await registry.UnpublishSkillAsync(user.UserId, id, ct);
+                return Results.Ok(new { skill.Id, skill.Name, Scope = skill.Scope.ToString() });
+            });
         });
 
         return routes;

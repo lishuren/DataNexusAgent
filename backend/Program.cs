@@ -124,8 +124,14 @@ builder.Services.AddScoped<DataNexusEngine>();
 var app = builder.Build();
 
 // ---------------------------------------------------------------------------
-// Startup: migrate DB and seed built-in skills from .github/skills/public/
+// Startup: create DB schema and seed built-in skills from .github/skills/public/
 // ---------------------------------------------------------------------------
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+    await db.Database.EnsureCreatedAsync();
+}
+
 var skillRegistry = app.Services.GetRequiredService<SkillRegistry>();
 var seedPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", ".github", "skills", "public"));
 await skillRegistry.InitializeAsync(seedPath);

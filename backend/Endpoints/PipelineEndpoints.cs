@@ -38,9 +38,12 @@ public static class PipelineEndpoints
         });
 
         // Get a single pipeline
-        group.MapGet("/{id:int}", async (int id, PipelineRegistry registry, CancellationToken ct) =>
+        group.MapGet("/{id:int}", async (int id, PipelineRegistry registry, UserContext user, CancellationToken ct) =>
         {
-            var pipeline = await registry.GetByIdAsync(id, ct);
+            if (!user.IsAuthenticated)
+                return Results.Unauthorized();
+
+            var pipeline = await registry.GetByIdForUserAsync(user.UserId, id, ct);
             return pipeline is not null ? Results.Ok(pipeline) : Results.NotFound();
         });
 
@@ -60,15 +63,18 @@ public static class PipelineEndpoints
             if (request.AgentIds is not { Count: >= 2 })
                 return Results.BadRequest("A pipeline must have at least 2 agent steps.");
 
-            var pipeline = await registry.CreateAsync(
-                user.UserId, request.Name, request.AgentIds,
-                request.EnableSelfCorrection ?? true,
-                request.MaxCorrectionAttempts ?? 3, ct);
-
-            return Results.Created($"/api/pipelines/{pipeline.Id}", new
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
-                pipeline.Id, pipeline.Name,
-                Scope = pipeline.Scope.ToString()
+                var pipeline = await registry.CreateAsync(
+                    user.UserId, request.Name, request.AgentIds,
+                    request.EnableSelfCorrection ?? true,
+                    request.MaxCorrectionAttempts ?? 3, ct);
+
+                return Results.Created($"/api/pipelines/{pipeline.Id}", new
+                {
+                    pipeline.Id, pipeline.Name,
+                    Scope = pipeline.Scope.ToString()
+                });
             });
         });
 
@@ -89,15 +95,18 @@ public static class PipelineEndpoints
             if (request.AgentIds is not { Count: >= 2 })
                 return Results.BadRequest("A pipeline must have at least 2 agent steps.");
 
-            var pipeline = await registry.UpdateAsync(
-                user.UserId, id, request.Name, request.AgentIds,
-                request.EnableSelfCorrection ?? true,
-                request.MaxCorrectionAttempts ?? 3, ct);
-
-            return Results.Ok(new
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
-                pipeline.Id, pipeline.Name,
-                Scope = pipeline.Scope.ToString()
+                var pipeline = await registry.UpdateAsync(
+                    user.UserId, id, request.Name, request.AgentIds,
+                    request.EnableSelfCorrection ?? true,
+                    request.MaxCorrectionAttempts ?? 3, ct);
+
+                return Results.Ok(new
+                {
+                    pipeline.Id, pipeline.Name,
+                    Scope = pipeline.Scope.ToString()
+                });
             });
         });
 
@@ -111,8 +120,11 @@ public static class PipelineEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            await registry.DeleteAsync(user.UserId, id, ct);
-            return Results.NoContent();
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                await registry.DeleteAsync(user.UserId, id, ct);
+                return Results.NoContent();
+            });
         });
 
         // Publish a private pipeline to public
@@ -125,8 +137,11 @@ public static class PipelineEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var pipeline = await registry.PublishAsync(user.UserId, id, ct);
-            return Results.Ok(new { pipeline.Id, pipeline.Name, Scope = pipeline.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var pipeline = await registry.PublishAsync(user.UserId, id, ct);
+                return Results.Ok(new { pipeline.Id, pipeline.Name, Scope = pipeline.Scope.ToString() });
+            });
         });
 
         // Unpublish a public pipeline back to private
@@ -139,8 +154,11 @@ public static class PipelineEndpoints
             if (!user.IsAuthenticated)
                 return Results.Unauthorized();
 
-            var pipeline = await registry.UnpublishAsync(user.UserId, id, ct);
-            return Results.Ok(new { pipeline.Id, pipeline.Name, Scope = pipeline.Scope.ToString() });
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
+            {
+                var pipeline = await registry.UnpublishAsync(user.UserId, id, ct);
+                return Results.Ok(new { pipeline.Id, pipeline.Name, Scope = pipeline.Scope.ToString() });
+            });
         });
 
         // Clone a pipeline (public or owned private) into a new private pipeline
@@ -157,11 +175,14 @@ public static class PipelineEndpoints
             if (string.IsNullOrWhiteSpace(request.Name))
                 return Results.BadRequest("Pipeline name is required.");
 
-            var pipeline = await registry.CloneAsync(user.UserId, id, request.Name, ct);
-            return Results.Created($"/api/pipelines/{pipeline.Id}", new
+            return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
-                pipeline.Id, pipeline.Name,
-                Scope = pipeline.Scope.ToString()
+                var pipeline = await registry.CloneAsync(user.UserId, id, request.Name, ct);
+                return Results.Created($"/api/pipelines/{pipeline.Id}", new
+                {
+                    pipeline.Id, pipeline.Name,
+                    Scope = pipeline.Scope.ToString()
+                });
             });
         });
 

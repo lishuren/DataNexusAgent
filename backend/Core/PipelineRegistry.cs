@@ -44,6 +44,17 @@ public sealed class PipelineRegistry(
         return entity?.ToDefinition();
     }
 
+    public async Task<PipelineDefinition?> GetByIdForUserAsync(
+        string userId, int id, CancellationToken ct = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        var entity = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(
+            p => p.Id == id && (p.Scope == SkillScope.Public || p.OwnerId == userId), ct);
+        return entity?.ToDefinition();
+    }
+
     public async Task<PipelineDefinition> CreateAsync(
         string userId, string name, IReadOnlyList<int> agentIds,
         bool enableSelfCorrection = true, int maxCorrectionAttempts = 3,
@@ -51,6 +62,8 @@ public sealed class PipelineRegistry(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+
+        await EnsurePipelineNameAvailableAsync(db, userId, name, null, ct);
 
         var entity = new PipelineEntity
         {
@@ -82,8 +95,9 @@ public sealed class PipelineRegistry(
 
         var entity = await db.Pipelines.FirstOrDefaultAsync(
             p => p.Id == pipelineId && p.OwnerId == userId, ct)
-            ?? throw new InvalidOperationException(
-                $"Pipeline {pipelineId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Pipeline {pipelineId} not found.");
+
+        await EnsurePipelineNameAvailableAsync(db, userId, name, pipelineId, ct);
 
         entity.Name = name;
         entity.AgentIdsJson = JsonSerializer.Serialize(agentIds);
@@ -106,8 +120,7 @@ public sealed class PipelineRegistry(
 
         var entity = await db.Pipelines.FirstOrDefaultAsync(
             p => p.Id == pipelineId && p.OwnerId == userId, ct)
-            ?? throw new InvalidOperationException(
-                $"Pipeline {pipelineId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Pipeline {pipelineId} not found.");
 
         db.Pipelines.Remove(entity);
         await db.SaveChangesAsync(ct);
@@ -124,8 +137,7 @@ public sealed class PipelineRegistry(
 
         var entity = await db.Pipelines.FirstOrDefaultAsync(
             p => p.Id == pipelineId && p.OwnerId == userId && p.Scope == SkillScope.Private, ct)
-            ?? throw new InvalidOperationException(
-                $"Pipeline {pipelineId} not found for user '{userId}'");
+            ?? throw new ResourceNotFoundException($"Pipeline {pipelineId} not found.");
 
         entity.Scope = SkillScope.Public;
         entity.PublishedByUserId = userId;
@@ -148,10 +160,12 @@ public sealed class PipelineRegistry(
 
         var entity = await db.Pipelines.FirstOrDefaultAsync(
             p => p.Id == pipelineId && p.Scope == SkillScope.Public, ct)
-            ?? throw new InvalidOperationException($"Pipeline {pipelineId} not found");
+            ?? throw new ResourceNotFoundException($"Pipeline {pipelineId} not found.");
 
         if (!string.Equals(entity.PublishedByUserId, userId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Pipeline {pipelineId} not owned by user '{userId}'");
+            throw new ResourceAccessDeniedException($"You cannot unpublish this pipeline.");
+
+        await EnsurePipelineNameAvailableAsync(db, userId, entity.Name, entity.Id, ct);
 
         entity.Scope = SkillScope.Private;
         entity.OwnerId = userId;
@@ -173,10 +187,12 @@ public sealed class PipelineRegistry(
         var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
 
         var source = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct)
-            ?? throw new InvalidOperationException($"Pipeline {pipelineId} not found");
+            ?? throw new ResourceNotFoundException($"Pipeline {pipelineId} not found.");
 
         if (source.Scope != SkillScope.Public && !string.Equals(source.OwnerId, userId, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Pipeline {pipelineId} not available for user '{userId}'");
+            throw new ResourceNotFoundException($"Pipeline {pipelineId} not found.");
+
+        await EnsurePipelineNameAvailableAsync(db, userId, newName, null, ct);
 
         var entity = new PipelineEntity
         {
@@ -196,5 +212,20 @@ public sealed class PipelineRegistry(
             userId, source.Name, newName);
 
         return entity.ToDefinition();
+    }
+
+    private static async Task EnsurePipelineNameAvailableAsync(
+        DataNexusDbContext db,
+        string userId,
+        string name,
+        int? excludeId,
+        CancellationToken ct)
+    {
+        var exists = await db.Pipelines.AnyAsync(
+            p => p.OwnerId == userId && p.Name == name && (!excludeId.HasValue || p.Id != excludeId.Value),
+            ct);
+
+        if (exists)
+            throw new ResourceConflictException($"Pipeline name '{name}' already exists.");
     }
 }
