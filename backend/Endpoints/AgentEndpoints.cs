@@ -50,7 +50,17 @@ public static class AgentEndpoints
                 return Results.Unauthorized();
 
             var agent = await registry.GetAgentByIdForUserAsync(user.UserId, id, ct);
-            return agent is not null ? Results.Ok(agent) : Results.NotFound();
+            if (agent is null) return Results.NotFound();
+
+            return Results.Ok(new
+            {
+                agent.Id, agent.Name, agent.Icon, agent.Description,
+                ExecutionType = agent.ExecutionType.ToString(),
+                SystemPrompt = agent.SystemPrompt,
+                agent.Command, agent.Arguments, agent.WorkingDirectory, agent.TimeoutSeconds,
+                agent.UiSchema, agent.Plugins, agent.Skills,
+                Scope = agent.Scope.ToString(), agent.OwnerId, agent.PublishedByUserId, agent.IsBuiltIn
+            });
         });
 
         // Create a new private agent

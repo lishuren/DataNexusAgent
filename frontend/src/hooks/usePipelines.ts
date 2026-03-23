@@ -10,7 +10,7 @@ export function usePipelines() {
     setLoading(true);
     try {
       setPipelines(await listPipelines());
-    } catch { /* auth may not be ready */ }
+    } catch (e) { console.warn("usePipelines: fetch failed", e); }
     setLoading(false);
   }, []);
 
@@ -24,7 +24,7 @@ export function usePublicPipelines() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listPublicPipelines().then(setPipelines).catch(() => {}).finally(() => setLoading(false));
+    listPublicPipelines().then(setPipelines).catch((e) => console.warn("usePublicPipelines: fetch failed", e)).finally(() => setLoading(false));
   }, []);
 
   return { pipelines, loading };

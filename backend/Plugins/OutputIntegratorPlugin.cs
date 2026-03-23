@@ -118,11 +118,11 @@ public sealed class OutputIntegratorPlugin(
             : new PluginResult(false, responseBody, "API_ERROR", $"API returned {response.StatusCode}");
     }
 
-    private async Task<PluginResult> ExecuteDatabaseWriteAsync(PluginContext context, CancellationToken ct)
+    private Task<PluginResult> ExecuteDatabaseWriteAsync(PluginContext context, CancellationToken ct)
     {
-        await Task.CompletedTask;
-        logger.LogInformation("[User: {UserId}] Database write executed (placeholder)", context.UserId);
-        return new PluginResult(true, "Database write completed successfully");
+        // TODO: Implement database write support
+        throw new NotImplementedException(
+            "Database write destination is not yet implemented. Use 'api' destination instead.");
     }
 
     private sealed record SchemaValidationResult(bool IsValid, string? ErrorMessage);

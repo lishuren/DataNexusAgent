@@ -10,7 +10,7 @@ export function useAgents() {
     setLoading(true);
     try {
       setAgents(await listAgents());
-    } catch { /* auth may not be ready */ }
+    } catch (e) { console.warn("useAgents: fetch failed", e); }
     setLoading(false);
   }, []);
 
@@ -24,7 +24,7 @@ export function usePublicAgents() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listPublicAgents().then(setAgents).catch(() => {}).finally(() => setLoading(false));
+    listPublicAgents().then(setAgents).catch((e) => console.warn("usePublicAgents: fetch failed", e)).finally(() => setLoading(false));
   }, []);
 
   return { agents, loading };

@@ -10,7 +10,7 @@ export function useSkills() {
     setLoading(true);
     try {
       setSkills(await listSkills());
-    } catch { /* auth may not be ready */ }
+    } catch (e) { console.warn("useSkills: fetch failed", e); }
     setLoading(false);
   }, []);
 
@@ -24,7 +24,7 @@ export function usePublicSkills() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listPublicSkills().then(setSkills).catch(() => {}).finally(() => setLoading(false));
+    listPublicSkills().then(setSkills).catch((e) => console.warn("usePublicSkills: fetch failed", e)).finally(() => setLoading(false));
   }, []);
 
   return { skills, loading };

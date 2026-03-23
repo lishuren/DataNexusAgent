@@ -1,4 +1,4 @@
-import { getToken } from "./auth";
+import { getToken, logout } from "./auth";
 import type { Agent, Pipeline, PipelineRequest, ProcessingRequest, ProcessingResult, Skill, TaskHistory } from "@/types/api";
 
 const BASE_URL = "/api";
@@ -13,6 +13,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+
+  // If the backend rejects the token (user removed from Keycloak, token expired),
+  // force a logout so the user is redirected to the Keycloak login page.
+  if (res.status === 401) {
+    logout();
+    throw new Error("Session expired — redirecting to login");
+  }
 
   if (!res.ok) {
     const body = await res.text();
@@ -188,3 +195,13 @@ export const clonePipeline = (id: number, name: string) =>
 // --- Task History ---
 
 export const listTasks = () => apiFetch<TaskHistory[]>("/tasks");
+
+// --- Current user (backend-confirmed identity) ---
+
+export interface MeResponse {
+  userId: string;
+  displayName: string;
+  email: string;
+}
+
+export const fetchMe = () => apiFetch<MeResponse>("/me");

@@ -14,8 +14,8 @@ export default function SkillsPage() {
   const refresh = useCallback(async () => {
     try {
       setSkills(await listSkills());
-    } catch {
-      /* ignore */
+    } catch (e) {
+      console.warn("Failed to load skills:", e);
     }
   }, []);
 

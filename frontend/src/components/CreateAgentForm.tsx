@@ -8,17 +8,9 @@ interface CreateAgentFormProps {
   onCancel?: () => void;
 }
 
-const pluginDisplayName = (plugin: string) => {
-  if (plugin === "InputProcessor") return "ExcelParser";
-  if (plugin === "OutputIntegrator") return "OutputIntegrator";
-  return plugin;
-};
+const pluginDisplayName = (plugin: string) => plugin;
 
-const normalizePluginName = (plugin: string) => {
-  if (plugin === "ExcelParser") return "InputProcessor";
-  if (plugin === "ActionRunner") return "OutputIntegrator";
-  return plugin;
-};
+const normalizePluginName = (plugin: string) => plugin;
 
 const normalizeList = (value: string[] | string | null | undefined) => {
   if (!value) return [];
@@ -111,6 +103,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
         description,
         executionType: execType,
         systemPrompt: execType === "Llm" ? systemPrompt : undefined,
+        uiSchema,
         command: execType === "External" ? command : undefined,
         arguments: execType === "External" ? args : undefined,
         workingDirectory: execType === "External" ? workDir || undefined : undefined,
@@ -165,27 +158,50 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
         </div>
       </div>
 
+      {/* Name + Icon row */}
       <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.75rem" }}>
+        <div style={{ flex: 1 }}>
+          <label className="form-label">Name <span style={{ color: "var(--danger)" }}>*</span></label>
+          <input
+            style={{ marginBottom: 0 }}
+            placeholder="Agent name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div style={{ width: 80 }}>
+          <label className="form-label">Icon</label>
+          <input
+            style={{ marginBottom: 0 }}
+            placeholder="📧"
+            value={icon}
+            onChange={(e) => setIcon(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Description — before prompt so users set intent first */}
+      <div style={{ marginBottom: "0.75rem" }}>
+        <label className="form-label">Description</label>
         <input
-          style={{ flex: 1 }}
-          placeholder="Agent name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          style={{ width: 80 }}
-          placeholder="Icon"
-          value={icon}
-          onChange={(e) => setIcon(e.target.value)}
+          style={{ marginBottom: 0 }}
+          placeholder="Short description shown on agent cards"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
         />
       </div>
 
+      {/* System prompt (LLM) or external execution config */}
       {execType === "Llm" && (
-        <textarea
-          placeholder="System prompt — define the agent's role and behavior..."
-          value={systemPrompt}
-          onChange={(e) => setSystemPrompt(e.target.value)}
-        />
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label className="form-label">System Prompt</label>
+          <textarea
+            style={{ marginBottom: 0 }}
+            placeholder="Define the agent's role and behavior..."
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+          />
+        </div>
       )}
 
       {execType === "External" && (
@@ -208,7 +224,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
               <input type="number" value={timeout} min={1} max={120} onChange={(e) => setTimeout(Number(e.target.value))} style={{ marginBottom: 0 }} />
             </div>
           </div>
-          <div className="protocol-info">
+          <div className="protocol-info" style={{ marginBottom: "0.75rem" }}>
             <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>📋 stdin/stdout JSON Protocol</div>
             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
               Your script receives <code>{`{"input":"...","parameters":{...},"userId":"..."}`}</code> on <strong>stdin</strong>.<br />
@@ -219,13 +235,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
         </>
       )}
 
-      <textarea
-        placeholder="Description"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        style={{ minHeight: "50px" }}
-      />
-
+      {/* Plugins */}
       <div style={{ marginBottom: "0.75rem" }}>
         <label className="form-label">Plugins</label>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -236,7 +246,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
           ))}
           <input
             style={{ width: "auto", flex: 1, minWidth: 120, marginBottom: 0 }}
-            placeholder="Plugin name"
+            placeholder="Plugin name (e.g. InputProcessor)"
             value={pluginInput}
             onChange={(e) => setPluginInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addPlugin()}
@@ -245,6 +255,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
         </div>
       </div>
 
+      {/* Skills */}
       <div style={{ marginBottom: "0.75rem" }}>
         <label className="form-label">Skills (injected into system prompt)</label>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -255,13 +266,24 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
           ))}
           <input
             style={{ width: "auto", flex: 1, minWidth: 120, marginBottom: 0 }}
-            placeholder="Skill name"
+            placeholder="Skill name (e.g. InvoiceExcelExtractor)"
             value={skillInput}
             onChange={(e) => setSkillInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addSkill()}
           />
           <button className="pipeline-add" type="button" style={{ padding: "2px 8px" }} onClick={addSkill}>+ Add</button>
         </div>
+      </div>
+
+      {/* UI Schema */}
+      <div style={{ marginBottom: "0.75rem" }}>
+        <label className="form-label">UI Schema <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(JSON array — defines form fields on the Process page)</span></label>
+        <textarea
+          placeholder={'[{"type":"file","name":"inputFile","label":"Upload file","accept":".xlsx"}]'}
+          value={uiSchema ?? ""}
+          onChange={(e) => setUiSchema(e.target.value || undefined)}
+          style={{ minHeight: "80px", fontFamily: "monospace", fontSize: "0.8rem", marginBottom: 0 }}
+        />
       </div>
 
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>

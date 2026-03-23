@@ -107,9 +107,15 @@ public sealed class ExternalProcessRunner(
 
         try
         {
-            // Write input to stdin and close
-            await process.StandardInput.WriteAsync(payload);
-            process.StandardInput.Close();
+            // Write input to stdin and close — ensure stdin closes even if write fails
+            try
+            {
+                await process.StandardInput.WriteAsync(payload);
+            }
+            finally
+            {
+                process.StandardInput.Close();
+            }
 
             // Read stdout + stderr concurrently
             var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);

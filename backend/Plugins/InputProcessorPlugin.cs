@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using ClosedXML.Excel;
 using DataNexus.Core;
@@ -90,23 +91,102 @@ public sealed class InputProcessorPlugin(
 
     private static string ParseCsv(string input)
     {
-        var lines = input.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0) return "[]";
+        var lines = ParseCsvLines(input);
+        if (lines.Count == 0) return "[]";
 
-        var headers = lines[0].Split(',').Select(h => h.Trim()).ToList();
+        var headers = lines[0];
         var rows = new List<Dictionary<string, string>>();
 
-        foreach (var line in lines.Skip(1))
+        foreach (var values in lines.Skip(1))
         {
-            var values = line.Split(',');
             var row = new Dictionary<string, string>();
-            for (var i = 0; i < headers.Count && i < values.Length; i++)
-                row[headers[i]] = values[i].Trim();
+            for (var i = 0; i < headers.Count && i < values.Count; i++)
+                row[headers[i]] = values[i];
 
             rows.Add(row);
         }
 
         return JsonSerializer.Serialize(rows, JsonSerializerOptions.Web);
+    }
+
+    /// <summary>
+    /// RFC 4180-compliant CSV line parser. Handles quoted fields containing commas,
+    /// newlines, and escaped double-quotes (<c>""</c>).
+    /// </summary>
+    private static List<List<string>> ParseCsvLines(string input)
+    {
+        var result = new List<List<string>>();
+        var currentRow = new List<string>();
+        var field = new StringBuilder();
+        var inQuotes = false;
+        var i = 0;
+
+        while (i < input.Length)
+        {
+            var ch = input[i];
+
+            if (inQuotes)
+            {
+                if (ch == '"')
+                {
+                    // Peek ahead: escaped quote ("") or end of quoted field
+                    if (i + 1 < input.Length && input[i + 1] == '"')
+                    {
+                        field.Append('"');
+                        i += 2;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                        i++;
+                    }
+                }
+                else
+                {
+                    field.Append(ch);
+                    i++;
+                }
+            }
+            else
+            {
+                if (ch == '"')
+                {
+                    inQuotes = true;
+                    i++;
+                }
+                else if (ch == ',')
+                {
+                    currentRow.Add(field.ToString().Trim());
+                    field.Clear();
+                    i++;
+                }
+                else if (ch == '\r' || ch == '\n')
+                {
+                    currentRow.Add(field.ToString().Trim());
+                    field.Clear();
+                    if (currentRow.Any(f => f.Length > 0))
+                        result.Add(currentRow);
+                    currentRow = [];
+                    // Skip \r\n pair
+                    if (ch == '\r' && i + 1 < input.Length && input[i + 1] == '\n')
+                        i += 2;
+                    else
+                        i++;
+                }
+                else
+                {
+                    field.Append(ch);
+                    i++;
+                }
+            }
+        }
+
+        // Handle last field / last row
+        currentRow.Add(field.ToString().Trim());
+        if (currentRow.Any(f => f.Length > 0))
+            result.Add(currentRow);
+
+        return result;
     }
 
     private async Task<string> DownloadToTempAsync(Uri uri, CancellationToken ct)

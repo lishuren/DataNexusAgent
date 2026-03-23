@@ -11,7 +11,7 @@ export default function MarketplacePage() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const plugins = [
     {
-      name: "ExcelParser",
+      name: "InputProcessor",
       description: "Parses Excel/CSV/JSON input into structured JSON for the agent.",
     },
     {
@@ -25,8 +25,8 @@ export default function MarketplacePage() {
       const [a, s] = await Promise.all([listPublicAgents(), listPublicSkills()]);
       setAgents(a);
       setSkills(s);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      console.warn("Failed to load marketplace data:", e);
     }
   }, []);
 

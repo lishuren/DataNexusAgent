@@ -245,7 +245,21 @@ DataNexus/                          ← monorepo root
 │   ├── DataNexus.csproj
 │   ├── Program.cs
 │   ├── appsettings.json
-│   ├── Agents/                     ← DataNexusEngine, ExternalProcessRunner, AnalystAgent, ExecutorAgent
+│   ├── Agents/
+│   │   ├── Af/                     ← Agent Framework integration
+│   │   │   ├── AfChatClientProvider.cs        — singleton IChatClient via GitHub Models
+│   │   │   ├── DynamicWorkflowBuilder.cs      — builds AF Workflow from AgentDefinitions
+│   │   │   ├── ExternalProcessChatClient.cs   — IChatClient adapter for CLI/script agents
+│   │   │   └── WorkflowResultMapper.cs        — maps AgentResponseEvent → ProcessingResult
+│   │   ├── AgentFrameworkExecutionRuntime.cs   — IAgentExecutionRuntime (AF-backed)
+│   │   ├── AgentExecutionRuntimeSelector.cs    — routes to AF or legacy runtime
+│   │   ├── AgentRuntimeOptions.cs              — runtime feature-flag config
+│   │   ├── DataNexusEngine.cs                  — legacy orchestration engine
+│   │   ├── ExternalProcessRunner.cs            — CLI process execution (security boundary)
+│   │   ├── ExternalAgentOptions.cs             — command allowlist / timeout config
+│   │   ├── IAgentExecutionRuntime.cs           — runtime interface
+│   │   ├── AnalystAgent.cs                     — built-in Analyst agent logic
+│   │   └── ExecutorAgent.cs                    — built-in Executor agent logic
 │   ├── Core/                       ← AgentEntity, AgentRegistry, PipelineEntity, PipelineRegistry, SkillRegistry, SkillDefinition
 │   ├── Endpoints/                  ← ProcessingEndpoints, AgentEndpoints, PipelineEndpoints, SkillsEndpoints
 │   ├── Identity/                   ← KeycloakAuthService, KeycloakMiddleware, UserContext
@@ -260,11 +274,13 @@ DataNexus/                          ← monorepo root
 │   └── src/
 │       ├── main.tsx
 │       ├── App.tsx
-│       ├── components/             ← SkillsPanel, ProcessingPanel
+│       ├── components/             ← AgentCard, AgentSelector, CreateAgentForm, DynamicForm,
+│       │                              ErrorBoundary, Layout, PipelineBuilder, ProcessingPanel,
+│       │                              QuickActions, RecentTasks, ResultBox, SavedPipelines, SkillsPanel
 │       ├── services/               ← auth.ts (Keycloak), api.ts (fetch wrapper)
 │       ├── types/                  ← TypeScript interfaces mirroring backend DTOs
-│       ├── hooks/
-│       ├── pages/
+│       ├── hooks/                  ← useAgents, usePipelines, useSkills
+│       ├── pages/                  ← ProcessPage, AgentsPage, SkillsPage, MarketplacePage
 │       └── styles/
 └── DataNexus.sln                   ← solution file referencing backend/DataNexus.csproj
 ```

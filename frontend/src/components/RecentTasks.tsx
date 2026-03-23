@@ -8,8 +8,8 @@ export function RecentTasks() {
   const refresh = useCallback(async () => {
     try {
       setTasks(await listTasks());
-    } catch {
-      /* ignore — auth may not be ready */
+    } catch (e) {
+      console.warn("Failed to load tasks:", e);
     }
   }, []);
 

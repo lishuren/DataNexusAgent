@@ -40,8 +40,8 @@ export default function ProcessPage() {
       if (a.length > 0 && !selectedAgentId && !selectedPipelineId) {
         selectAgent(a[0]!.id, a);
       }
-    } catch {
-      /* auth may not be ready */
+    } catch (e) {
+      console.warn("Failed to load agents/pipelines:", e);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -62,7 +62,7 @@ export default function ProcessPage() {
         const a = await getAgent(id);
         setSelectedAgent(a);
         setFields(normalizeUiSchema(a.uiSchema));
-      } catch { /* ignore */ }
+      } catch (e) { console.warn("Failed to fetch agent:", e); }
     }
   };
 

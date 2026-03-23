@@ -3,6 +3,7 @@ import type { Agent, Pipeline } from "@/types/api";
 import {
   listAgents,
   listPipelines,
+  getAgent,
   publishAgent,
   unpublishAgent,
   deleteAgent,
@@ -23,7 +24,7 @@ import { SavedPipelines } from "@/components/SavedPipelines";
 export default function AgentsPage() {
   const pluginCatalog = [
     {
-      name: "ExcelParser",
+      name: "InputProcessor",
       description: "Parses Excel/CSV/JSON input into structured JSON for the agent.",
     },
     {
@@ -35,6 +36,7 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [agentMsg, setAgentMsg] = useState("");
   const [pipelineName, setPipelineName] = useState("");
   const [pipelineSteps, setPipelineSteps] = useState<number[]>([]);
   const [selfCorrection, setSelfCorrection] = useState(true);
@@ -47,8 +49,8 @@ export default function AgentsPage() {
       const [a, p] = await Promise.all([listAgents(), listPipelines()]);
       setAgents(a);
       setPipelines(p);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      console.warn("Failed to load agents/pipelines:", e);
     }
   }, []);
 
@@ -58,8 +60,8 @@ export default function AgentsPage() {
     try {
       await publishAgent(id);
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setAgentMsg(`Failed to publish: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -67,13 +69,18 @@ export default function AgentsPage() {
     try {
       await unpublishAgent(id);
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setAgentMsg(`Failed to unpublish: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
-  const handleEditAgent = (agent: Agent) => {
-    setEditingAgent(agent);
+  const handleEditAgent = async (agent: Agent) => {
+    try {
+      const full = await getAgent(agent.id);
+      setEditingAgent(full);
+    } catch {
+      setEditingAgent(agent); // fallback to list data
+    }
   };
 
   const handleDeleteAgent = async (id: number) => {
@@ -81,8 +88,8 @@ export default function AgentsPage() {
       await deleteAgent(id);
       setEditingAgent((current) => (current?.id === id ? null : current));
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setAgentMsg(`Failed to delete: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -92,8 +99,8 @@ export default function AgentsPage() {
     try {
       await cloneAgent(agent.id, name.trim());
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setAgentMsg(`Failed to clone: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -135,8 +142,8 @@ export default function AgentsPage() {
     try {
       await apiDeletePipeline(id);
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setPipelineMsg(`Failed to delete: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -146,8 +153,8 @@ export default function AgentsPage() {
     try {
       await clonePipeline(pipeline.id, name.trim());
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setPipelineMsg(`Failed to clone: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -155,8 +162,8 @@ export default function AgentsPage() {
     try {
       await publishPipeline(id);
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setPipelineMsg(`Failed to publish: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -164,8 +171,8 @@ export default function AgentsPage() {
     try {
       await unpublishPipeline(id);
       refresh();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setPipelineMsg(`Failed to unpublish: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -181,6 +188,9 @@ export default function AgentsPage() {
       {/* My Agents */}
       <div className="card">
         <h2>🤖 My Agents</h2>
+        {agentMsg && (
+          <p style={{ color: "var(--danger)", fontSize: "0.875rem", marginBottom: "0.75rem" }}>{agentMsg}</p>
+        )}
         <div className="agent-grid">
           {agents.map((a) => (
             <div key={a.id} style={{ position: "relative" }}>

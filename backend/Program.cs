@@ -24,14 +24,26 @@ builder.Services
         options.Authority = keycloakSection["Authority"];
         options.Audience = keycloakSection["Audience"];
         options.RequireHttpsMetadata = builder.Environment.IsProduction();
+        var expectedAudience = keycloakSection["Audience"] ?? "datanexus";
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidIssuer = keycloakSection["Authority"],
-            ValidateAudience = false,
+            ValidateAudience = true,
             ValidateLifetime = true,
             NameClaimType = "preferred_username",
-            RoleClaimType = "realm_access"
+            RoleClaimType = "realm_access",
+            // Keycloak puts the client_id in the "azp" (authorized party) claim,
+            // not always in "aud". Accept either as valid audience.
+            AudienceValidator = (audiences, token, _) =>
+            {
+                if (audiences.Any(a => string.Equals(a, expectedAudience, StringComparison.OrdinalIgnoreCase)))
+                    return true;
+                // Fall back to "azp" claim (Keycloak's authorized party)
+                if (token is Microsoft.IdentityModel.JsonWebTokens.JsonWebToken jwt)
+                    return string.Equals(jwt.GetPayloadValue<string>("azp"), expectedAudience, StringComparison.OrdinalIgnoreCase);
+                return false;
+            }
         };
         options.Events = new JwtBearerEvents
         {
@@ -156,6 +168,15 @@ app.UseMiddleware<KeycloakMiddleware>();
 // ---------------------------------------------------------------------------
 // Minimal API endpoints
 // ---------------------------------------------------------------------------
+
+// Returns the user context as seen by the backend so the frontend can do
+// ownership comparisons using the exact same userId the backend stores.
+app.MapGet("/api/me", (UserContext user) =>
+    user.IsAuthenticated
+        ? Results.Ok(new { user.UserId, user.DisplayName, user.Email })
+        : Results.Unauthorized())
+    .RequireAuthorization();
+
 app.MapProcessingEndpoints();
 app.MapSkillsEndpoints();
 app.MapAgentEndpoints();

@@ -18,10 +18,17 @@ export async function initAuth(): Promise<boolean> {
     pkceMethod: false,
   });
 
-  // Auto-refresh token 30s before expiry
+  // Auto-refresh token 30s before expiry.
+  // If the user has been removed from Keycloak, updateToken will fail
+  // and we force a logout so the session cannot continue.
   setInterval(async () => {
     if (keycloak.authenticated) {
-      await keycloak.updateToken(30);
+      try {
+        await keycloak.updateToken(30);
+      } catch {
+        console.warn("Token refresh failed — user session is no longer valid");
+        keycloak.logout();
+      }
     }
   }, 10_000);
 
@@ -32,8 +39,16 @@ export function getToken(): string | undefined {
   return keycloak.token;
 }
 
+// Backend-confirmed userId — set once after login via /api/me so ownership
+// comparisons use the exact same value the backend stores (respects UserIdClaim config).
+let _backendUserId: string | undefined;
+
+export function setBackendUserId(id: string): void {
+  _backendUserId = id;
+}
+
 export function getUserId(): string | undefined {
-  return keycloak.subject;
+  return _backendUserId ?? keycloak.subject;
 }
 
 export function getDisplayName(): string | undefined {
