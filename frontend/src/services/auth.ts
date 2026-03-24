@@ -68,8 +68,17 @@ export function getDisplayName(): string | undefined {
 export async function loadDisplayName(): Promise<string | undefined> {
   try {
     const profile = await keycloak.loadUserProfile();
+
+    // Log available profile fields in dev so we can see what Keycloak provides
+    if (import.meta.env.DEV) {
+      console.debug("[DataNexus] Keycloak profile:", profile);
+      console.debug("[DataNexus] Token claims:", keycloak.tokenParsed);
+    }
+
     const full = [profile.firstName, profile.lastName].filter(Boolean).join(" ");
     if (full.trim()) return full.trim();
+    // Try email — often more useful than a raw username
+    if (profile.email) return profile.email;
     return (profile.username as string | undefined) ?? getDisplayName();
   } catch {
     return getDisplayName();
