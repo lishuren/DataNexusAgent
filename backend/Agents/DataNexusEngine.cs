@@ -149,6 +149,7 @@ public sealed class DataNexusEngine(
     {
         // 1. Run input plugin if agent uses it
         string inputData = request.InputSource;
+        bool inputPluginRan = false;
         if (agent.PluginNames.Contains("InputProcessor"))
         {
             var pluginCtx = new PluginContext(user.UserId, request.InputSource, Metadata: request.Parameters);
@@ -156,16 +157,19 @@ public sealed class DataNexusEngine(
             if (!pluginResult.Success)
                 return ProcessingResult.Fail($"Input parsing failed: {pluginResult.ErrorMessage}");
             inputData = pluginResult.Output;
+            inputPluginRan = true;
         }
 
         // 2. Create AF agent (resolves skills, builds instructions, applies middleware)
-        var aiAgent = await agentFactory.CreateAgentAsync(agent, user, ct);
+        var agentResult = await agentFactory.CreateAgentAsync(agent, user, ct);
 
         // 3. Run the agent via AF
-        var response = await aiAgent.RunAsync(inputData, cancellationToken: ct);
+        var response = await agentResult.Agent.RunAsync(inputData, cancellationToken: ct);
         var llmResponse = response.Text ?? string.Empty;
 
         // 4. Run output plugin if agent uses it
+        bool outputPluginRan = false;
+        string? outputPluginResult = null;
         if (agent.PluginNames.Contains("OutputIntegrator"))
         {
             var outCtx = new PluginContext(
@@ -174,6 +178,8 @@ public sealed class DataNexusEngine(
                 request.Parameters);
 
             var outResult = await outputPlugin.ExecuteAsync(outCtx, ct);
+            outputPluginRan = true;
+            outputPluginResult = outResult.Success ? outResult.Output : $"[ERROR: {outResult.ErrorMessage}]";
 
             if (!outResult.Success && outResult.ErrorCode == "SCHEMA_MISMATCH")
                 return ProcessingResult.Fail($"Schema mismatch: {outResult.ErrorMessage}");
@@ -186,15 +192,29 @@ public sealed class DataNexusEngine(
             "[User: {UserId}] Agent '{Agent}' completed",
             user.UserId, agent.Name);
 
-        // Build debug info so users can diagnose prompt/skill/input issues
-        const int previewLen = 800;
+        // Build per-step debug info
+        const int previewLen = 1200;
+        string Truncate(string s) => s.Length > previewLen ? s[..previewLen] + "\n…(truncated)" : s;
+
+        var skillDetails = agentResult.ResolvedSkills
+            .Select(s => new DebugStep(
+                Step: s.Name,
+                Status: $"{s.Scope}",
+                Preview: Truncate(s.Instructions),
+                Chars: s.Instructions.Length))
+            .ToList();
+
         var debugInfo = new ProcessingDebugInfo(
-            ParsedInputPreview: inputData.Length > previewLen
-                ? inputData[..previewLen] + "…"
-                : inputData,
+            InputPluginRan: inputPluginRan,
+            ParsedInputPreview: Truncate(inputData),
             ParsedInputLength: inputData.Length,
             SkillsUsed: agent.SkillNames,
-            RawLlmResponse: llmResponse);
+            SkillDetails: skillDetails,
+            SystemPromptPreview: Truncate(agentResult.BuiltInstructions),
+            SystemPromptLength: agentResult.BuiltInstructions.Length,
+            RawLlmResponse: llmResponse,
+            OutputPluginRan: outputPluginRan,
+            OutputPluginResult: outputPluginResult);
 
         return ProcessingResult.Ok(
             $"Agent '{agent.Name}' completed successfully",

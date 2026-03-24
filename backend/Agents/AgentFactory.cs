@@ -1,11 +1,18 @@
 using System.Text;
 using DataNexus.Core;
 using DataNexus.Identity;
+using DataNexus.Models;
 using DataNexus.Plugins;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace DataNexus.Agents;
+
+/// <summary>Result of <see cref="AgentFactory.CreateAgentAsync"/> including resolved skills and built instructions.</summary>
+public sealed record CreateAgentResult(
+    AIAgent Agent,
+    string BuiltInstructions,
+    IReadOnlyList<SkillDefinition> ResolvedSkills);
 
 /// <summary>
 /// Creates Microsoft Agent Framework <see cref="ChatClientAgent"/> instances from
@@ -23,7 +30,7 @@ public sealed class AgentFactory(
     /// Builds a <see cref="AIAgent"/> for the given agent definition.
     /// Skills are resolved, instructions are assembled, and AF middleware is attached.
     /// </summary>
-    public async Task<AIAgent> CreateAgentAsync(
+    public async Task<CreateAgentResult> CreateAgentAsync(
         AgentDefinition agentDef,
         UserContext user,
         CancellationToken ct = default)
@@ -46,7 +53,7 @@ public sealed class AgentFactory(
         var logger = loggerFactory.CreateLogger($"Agent.{agentDef.Name}");
         var userId = user.UserId;
 
-        return agent.AsBuilder()
+        var builtAgent = agent.AsBuilder()
             .Use(
                 runFunc: async (messages, session, options, innerAgent, cancellationToken) =>
                 {
@@ -61,6 +68,8 @@ public sealed class AgentFactory(
                     return innerAgent.RunStreamingAsync(messages, session, options, cancellationToken);
                 })
             .Build();
+
+        return new CreateAgentResult(builtAgent, instructions, skills);
     }
 
     /// <summary>
@@ -97,7 +106,7 @@ public sealed class AgentFactory(
         if (agentDef.ExecutionType == AgentExecutionType.External)
             return CreateExternalAgent(agentDef, user);
 
-        return await CreateAgentAsync(agentDef, user, ct);
+        return (await CreateAgentAsync(agentDef, user, ct)).Agent;
     }
 
     /// <summary>
