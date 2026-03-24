@@ -151,6 +151,7 @@ export default function SkillsPage() {
           placeholder="Skill instructions in markdown..."
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
+          style={{ minHeight: "280px" }}
         />
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <button className="btn btn-primary" onClick={handleCreate}>
