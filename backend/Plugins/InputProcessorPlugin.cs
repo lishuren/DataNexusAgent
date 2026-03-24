@@ -46,12 +46,25 @@ public sealed class InputProcessorPlugin(
     private async Task<string> ParseExcelAsync(string source, CancellationToken ct)
     {
         string filePath = source;
+        bool isTempFile = false;
 
-        // Download from URL if the source looks like one
-        if (Uri.TryCreate(source, UriKind.Absolute, out var uri) &&
+        // Decode base64 data URL (e.g. "data:application/...;base64,<data>") uploaded from browser
+        if (source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var commaIdx = source.IndexOf(',');
+            if (commaIdx < 0)
+                throw new FormatException("Invalid base64 data URL: missing comma separator.");
+            var bytes = Convert.FromBase64String(source[(commaIdx + 1)..]);
+            filePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.xlsx");
+            await File.WriteAllBytesAsync(filePath, bytes, ct);
+            isTempFile = true;
+        }
+        // Download from HTTPS URL
+        else if (Uri.TryCreate(source, UriKind.Absolute, out var uri) &&
             uri.Scheme == Uri.UriSchemeHttps)
         {
             filePath = await DownloadToTempAsync(uri, ct);
+            isTempFile = true;
         }
 
         try
@@ -77,8 +90,7 @@ public sealed class InputProcessorPlugin(
         }
         finally
         {
-            // Clean up temp file if we downloaded it
-            if (filePath != source && File.Exists(filePath))
+            if (isTempFile && File.Exists(filePath))
                 File.Delete(filePath);
         }
     }
@@ -209,6 +221,14 @@ public sealed class InputProcessorPlugin(
 
     private static string DetectInputType(string input)
     {
+        // Base64 data URL from browser file upload
+        if (input.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return input.Contains("spreadsheet") || input.Contains("excel") || input.Contains("xlsx")
+                ? "excel"
+                : "excel"; // treat all uploaded binary files as Excel by default
+        }
+
         if (input.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) ||
             input.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
             return "excel";

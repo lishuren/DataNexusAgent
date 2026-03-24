@@ -1,14 +1,13 @@
-using Azure;
-using Azure.AI.Inference;
 using DataNexus.Agents;
-using DataNexus.Agents.Af;
 using DataNexus.Core;
 using DataNexus.Endpoints;
 using DataNexus.Identity;
 using DataNexus.Plugins;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.IdentityModel.Tokens;
+using OpenAI;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -90,22 +89,22 @@ builder.Services.AddScoped<UserContext>();
 builder.Services.AddSingleton<KeycloakAuthService>();
 
 // ---------------------------------------------------------------------------
-// Azure AI Inference — GitHub Models (gpt-4o)
+// AI — IChatClient via OpenAI SDK + Microsoft.Extensions.AI
 // ---------------------------------------------------------------------------
-builder.Services.Configure<GitHubModelsConfig>(
-    builder.Configuration.GetSection("GitHubModels"));
-
-builder.Services.AddSingleton(_ =>
+builder.Services.AddSingleton<IChatClient>(_ =>
 {
+    var apiKey = builder.Configuration["GitHubModels:ApiKey"]
+        ?? throw new InvalidOperationException("GitHubModels:ApiKey must be configured");
     var endpoint = new Uri(
         builder.Configuration["GitHubModels:Endpoint"]
         ?? "https://models.inference.ai.azure.com");
+    var model = builder.Configuration["GitHubModels:Model"] ?? "gpt-4o";
 
-    var credential = new AzureKeyCredential(
-        builder.Configuration["GitHubModels:ApiKey"]
-        ?? throw new InvalidOperationException("GitHubModels:ApiKey must be configured"));
+    var openAiClient = new OpenAIClient(
+        new System.ClientModel.ApiKeyCredential(apiKey),
+        new OpenAIClientOptions { Endpoint = endpoint });
 
-    return new ChatCompletionsClient(endpoint, credential);
+    return openAiClient.GetChatClient(model).AsIChatClient();
 });
 
 // ---------------------------------------------------------------------------
@@ -131,14 +130,10 @@ builder.Services.AddScoped<ExternalProcessRunner>();
 builder.Services.AddScoped<InputProcessorPlugin>();
 builder.Services.AddScoped<OutputIntegratorPlugin>();
 
-// Agents & Engine
-builder.Services.Configure<AgentRuntimeOptions>(
-    builder.Configuration.GetSection(AgentRuntimeOptions.SectionName));
-builder.Services.AddSingleton<AfChatClientProvider>();
-builder.Services.AddScoped<DynamicWorkflowBuilder>();
+// Agent engine
+builder.Services.AddScoped<AgentFactory>();
 builder.Services.AddScoped<DataNexusEngine>();
-builder.Services.AddScoped<AgentFrameworkExecutionRuntime>();
-builder.Services.AddScoped<IAgentExecutionRuntime, AgentExecutionRuntimeSelector>();
+builder.Services.AddScoped<IAgentExecutionRuntime>(sp => sp.GetRequiredService<DataNexusEngine>());
 
 var app = builder.Build();
 

@@ -15,9 +15,3 @@ public sealed record PipelineRequest(
     bool EnableSelfCorrection = true,
     int MaxCorrectionAttempts = 3,
     IReadOnlyDictionary<string, string>? Parameters = null);
-
-public sealed record CorrectionRequest(
-    string OriginalInput,
-    string MismatchDetails,
-    string DestinationSchema,
-    int AttemptNumber);

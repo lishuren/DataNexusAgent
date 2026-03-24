@@ -31,7 +31,10 @@ export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
                     style={{ display: "none" }}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) onChange(f.key, file.name);
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => onChange(f.key, reader.result as string);
+                      reader.readAsDataURL(file);
                     }}
                   />
                 </div>

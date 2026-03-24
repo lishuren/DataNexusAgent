@@ -1,24 +1,20 @@
-using System.Text;
-using Azure.AI.Inference;
 using DataNexus.Core;
 using DataNexus.Identity;
 using DataNexus.Models;
 using DataNexus.Plugins;
-using Microsoft.Extensions.Options;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
 
 namespace DataNexus.Agents;
 
 public sealed class DataNexusEngine(
-    ChatCompletionsClient aiClient,
-    SkillRegistry skillRegistry,
+    AgentFactory agentFactory,
     AgentRegistry agentRegistry,
     InputProcessorPlugin inputPlugin,
     OutputIntegratorPlugin outputPlugin,
     ExternalProcessRunner externalRunner,
-    IOptions<GitHubModelsConfig> modelsConfig,
     ILogger<DataNexusEngine> logger) : IAgentExecutionRuntime
 {
-    private readonly string _model = modelsConfig.Value.Model;
     private const int MaxCorrectionAttempts = 3;
 
     /// <summary>
@@ -47,7 +43,9 @@ public sealed class DataNexusEngine(
     }
 
     /// <summary>
-    /// Runs a multi-agent pipeline: output of each agent feeds into the next.
+    /// Runs a multi-agent pipeline using AF's <see cref="AgentWorkflowBuilder.BuildSequential"/>.
+    /// Each agent is wrapped with its plugins as AF middleware, enabling a pure-AF execution flow.
+    /// Self-correction is handled by retrying the workflow when a plugin error is detected.
     /// </summary>
     public async Task<ProcessingResult> RunPipelineAsync(
         PipelineRequest pipeline,
@@ -58,65 +56,76 @@ public sealed class DataNexusEngine(
             "[User: {UserId}] Pipeline '{Name}' started with {Count} agents",
             user.UserId, pipeline.Name, pipeline.AgentIds.Count);
 
-        var currentInput = pipeline.InputSource;
-        var appliedAgents = new List<string>();
-        int totalAttempts = 0;
-
-        for (var step = 0; step < pipeline.AgentIds.Count; step++)
+        // Resolve all agent definitions
+        var agentDefs = new List<AgentDefinition>(pipeline.AgentIds.Count);
+        foreach (var agentId in pipeline.AgentIds)
         {
-            var agentDef = await agentRegistry.GetAgentByIdAsync(pipeline.AgentIds[step], ct)
-                ?? throw new InvalidOperationException($"Agent {pipeline.AgentIds[step]} not found");
-
-            logger.LogInformation(
-                "[User: {UserId}] Pipeline step {Step}/{Total}: {Agent}",
-                user.UserId, step + 1, pipeline.AgentIds.Count, agentDef.Name);
-
-            var stepRequest = new ProcessingRequest(
-                agentDef.Id, currentInput, pipeline.OutputDestination,
-                Parameters: pipeline.Parameters);
-
-            var result = await RunSingleAgentAsync(agentDef, stepRequest, user, ct);
-
-            if (!result.Success)
-            {
-                // Self-correction: loop back to previous agent if enabled
-                if (pipeline.EnableSelfCorrection && step > 0)
-                {
-                    var corrected = await TrySelfCorrectAsync(
-                        pipeline, step, currentInput, result.Message, user, ct);
-
-                    if (corrected is not null)
-                    {
-                        result = corrected.Value.Result;
-                        totalAttempts += corrected.Value.Attempts;
-
-                        if (result.Success)
-                        {
-                            currentInput = result.Data?.ToString() ?? result.Message;
-                            appliedAgents.Add($"{agentDef.Name} (corrected)");
-                            continue;
-                        }
-                    }
-                }
-
-                return ProcessingResult.Fail(
-                    $"Pipeline failed at step {step + 1} ({agentDef.Name}): {result.Message}");
-            }
-
-            currentInput = result.Data?.ToString() ?? result.Message;
-            appliedAgents.Add(agentDef.Name);
+            var agentDef = await agentRegistry.GetAgentByIdAsync(agentId, ct)
+                ?? throw new InvalidOperationException($"Agent {agentId} not found");
+            agentDefs.Add(agentDef);
         }
+
+        // Build AF agents with plugins embedded as middleware
+        var agents = new List<AIAgent>(agentDefs.Count);
+        foreach (var agentDef in agentDefs)
+        {
+            var agent = await agentFactory.CreatePipelineAgentAsync(
+                agentDef, user, inputPlugin, outputPlugin, pipeline.Parameters, ct);
+            agents.Add(agent);
+        }
+
+        // Build sequential workflow via AF
+        var workflow = AgentWorkflowBuilder.BuildSequential(pipeline.Name, agents);
+
+        // Execute workflow with retry for self-correction
+        var maxAttempts = pipeline.EnableSelfCorrection ? pipeline.MaxCorrectionAttempts : 1;
+        Run? run = null;
+        string? output = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            if (attempt > 1)
+                logger.LogInformation(
+                    "[User: {UserId}] Pipeline '{Name}' self-correction attempt {Attempt}",
+                    user.UserId, pipeline.Name, attempt);
+
+            run = await InProcessExecution.RunAsync(workflow, pipeline.InputSource, cancellationToken: ct);
+
+            // Extract the final output from workflow events
+            output = ExtractWorkflowOutput(run);
+
+            if (output is not null && !output.StartsWith("[PLUGIN_ERROR]"))
+                break; // Success
+
+            if (!pipeline.EnableSelfCorrection)
+                break;
+        }
+
+        if (output is null)
+            return ProcessingResult.Fail($"Pipeline '{pipeline.Name}' produced no output");
+
+        if (output.StartsWith("[PLUGIN_ERROR]"))
+            return ProcessingResult.Fail($"Pipeline '{pipeline.Name}' failed: {output}");
 
         logger.LogInformation("[User: {UserId}] Pipeline '{Name}' completed", user.UserId, pipeline.Name);
 
-        List<string> warnings = [];
-        if (totalAttempts > 0)
-            warnings.Add($"Required {totalAttempts} correction attempts");
-
         return ProcessingResult.Ok(
             $"Pipeline '{pipeline.Name}' completed successfully",
-            new { Agents = appliedAgents, Steps = pipeline.AgentIds.Count },
-            warnings.Count > 0 ? warnings : null);
+            output,
+            run?.NewEventCount > 0 ? [$"Workflow produced {run.NewEventCount} events"] : null);
+    }
+
+    /// <summary>
+    /// Extracts the last agent response text from a completed workflow run.
+    /// </summary>
+    private static string? ExtractWorkflowOutput(Run run)
+    {
+        var events = run.NewEvents;
+        var lastResponse = events
+            .OfType<AgentResponseEvent>()
+            .LastOrDefault();
+
+        return lastResponse?.Response.Text;
     }
 
     private async Task<ProcessingResult> RunSingleAgentAsync(
@@ -138,14 +147,7 @@ public sealed class DataNexusEngine(
         UserContext user,
         CancellationToken ct)
     {
-        // 1. Resolve skills for this agent
-        var skills = agent.SkillNames.Count > 0
-            ? await skillRegistry.GetSkillsForUserAsync(user.UserId, ct, [.. agent.SkillNames])
-            : request.SkillName is not null
-                ? await skillRegistry.GetSkillsForUserAsync(user.UserId, ct, request.SkillName)
-                : await skillRegistry.GetSkillsForUserAsync(user.UserId, ct);
-
-        // 2. Run input plugin if agent uses it
+        // 1. Run input plugin if agent uses it
         string inputData = request.InputSource;
         if (agent.PluginNames.Contains("InputProcessor"))
         {
@@ -156,13 +158,14 @@ public sealed class DataNexusEngine(
             inputData = pluginResult.Output;
         }
 
-        // 3. Build system prompt = agent prompt + skill instructions
-        var systemPrompt = BuildSystemPrompt(agent.SystemPrompt, skills);
+        // 2. Create AF agent (resolves skills, builds instructions, applies middleware)
+        var aiAgent = await agentFactory.CreateAgentAsync(agent, user, ct);
 
-        // 4. Call LLM
-        var llmResponse = await CallLlmAsync(systemPrompt, inputData, ct);
+        // 3. Run the agent via AF
+        var response = await aiAgent.RunAsync(inputData, cancellationToken: ct);
+        var llmResponse = response.Text ?? string.Empty;
 
-        // 5. Run output plugin if agent uses it
+        // 4. Run output plugin if agent uses it
         if (agent.PluginNames.Contains("OutputIntegrator"))
         {
             var outCtx = new PluginContext(
@@ -179,17 +182,16 @@ public sealed class DataNexusEngine(
                 return ProcessingResult.Fail($"Output failed: {outResult.ErrorMessage}");
         }
 
-        var skillNames = string.Join(", ", skills.Select(s => s.Name));
         logger.LogInformation(
-            "[User: {UserId}] Agent '{Agent}' completed. Skills: [{Skills}]",
-            user.UserId, agent.Name, skillNames);
+            "[User: {UserId}] Agent '{Agent}' completed",
+            user.UserId, agent.Name);
 
         return ProcessingResult.Ok(
             $"Agent '{agent.Name}' completed successfully",
             llmResponse);
     }
 
-    /// <summary>The original two-agent relay for backward compatibility.</summary>
+    /// <summary>The original two-agent relay for backward compatibility, now using AF agents.</summary>
     private async Task<ProcessingResult> RunDefaultPipelineAsync(
         ProcessingRequest request,
         UserContext user,
@@ -202,99 +204,45 @@ public sealed class DataNexusEngine(
         if (analyst is null || executor is null)
             return ProcessingResult.Fail("Default agents (Data Analyst, API Integrator) not found");
 
-        // Run Analyst
-        var analysisResult = await RunSingleAgentAsync(analyst, request, user, ct);
-        if (!analysisResult.Success)
-            return ProcessingResult.Fail($"Analysis failed: {analysisResult.Message}");
+        // Build AF agents with plugins for both steps
+        var analystAgent = await agentFactory.CreatePipelineAgentAsync(
+            analyst, user, inputPlugin, outputPlugin, request.Parameters, ct);
+        var executorAgent = await agentFactory.CreatePipelineAgentAsync(
+            executor, user, inputPlugin, outputPlugin, request.Parameters, ct);
 
-        // Run Executor
-        var execRequest = request with { InputSource = analysisResult.Data?.ToString() ?? "" };
-        var executionResult = await RunSingleAgentAsync(executor, execRequest, user, ct);
+        // Build sequential workflow via AF
+        var agentList = new List<AIAgent> { analystAgent, executorAgent };
+        var workflow = AgentWorkflowBuilder.BuildSequential("DefaultPipeline", agentList);
 
-        // Self-correction loop
-        var attempt = 1;
-        while (!executionResult.Success && executionResult.Message.Contains("Schema mismatch") && attempt < MaxCorrectionAttempts)
+        // Execute with self-correction retry
+        string? output = null;
+        var attempt = 0;
+
+        for (attempt = 1; attempt <= MaxCorrectionAttempts; attempt++)
         {
-            attempt++;
-            logger.LogInformation(
-                "[User: {UserId}] Self-correction — attempt {Attempt}/{Max}",
-                user.UserId, attempt, MaxCorrectionAttempts);
+            if (attempt > 1)
+                logger.LogInformation(
+                    "[User: {UserId}] Self-correction — attempt {Attempt}/{Max}",
+                    user.UserId, attempt, MaxCorrectionAttempts);
 
-            analysisResult = await RunSingleAgentAsync(analyst, request, user, ct);
-            if (!analysisResult.Success)
-                return ProcessingResult.Fail($"Re-analysis failed on attempt {attempt}");
+            var run = await InProcessExecution.RunAsync(workflow, request.InputSource, cancellationToken: ct);
+            output = ExtractWorkflowOutput(run);
 
-            execRequest = request with { InputSource = analysisResult.Data?.ToString() ?? "" };
-            executionResult = await RunSingleAgentAsync(executor, execRequest, user, ct);
+            if (output is not null && !output.StartsWith("[PLUGIN_ERROR]")
+                && !output.Contains("Schema mismatch"))
+                break;
         }
 
-        if (!executionResult.Success)
-            return executionResult;
+        if (output is null)
+            return ProcessingResult.Fail("Default pipeline produced no output");
+
+        if (output.StartsWith("[PLUGIN_ERROR]") || output.Contains("Schema mismatch"))
+            return ProcessingResult.Fail($"Default pipeline failed: {output}");
 
         List<string> warnings = [];
-        if (attempt > 1) warnings.Add($"Required {attempt} attempts to resolve schema mismatches");
+        if (attempt > 1) warnings.Add($"Required {attempt} attempts to resolve issues");
 
-        return ProcessingResult.Ok(executionResult.Message, executionResult.Data, warnings.Count > 0 ? warnings : null);
-    }
-
-    private async Task<(ProcessingResult Result, int Attempts)?> TrySelfCorrectAsync(
-        PipelineRequest pipeline,
-        int failedStep,
-        string lastInput,
-        string errorMessage,
-        UserContext user,
-        CancellationToken ct)
-    {
-        var prevAgentDef = await agentRegistry.GetAgentByIdAsync(pipeline.AgentIds[failedStep - 1], ct);
-        if (prevAgentDef is null) return null;
-
-        for (var attempt = 1; attempt <= pipeline.MaxCorrectionAttempts; attempt++)
-        {
-            logger.LogInformation(
-                "[User: {UserId}] Pipeline self-correction attempt {Attempt}: re-running {Agent}",
-                user.UserId, attempt, prevAgentDef.Name);
-
-            var retryRequest = new ProcessingRequest(
-                prevAgentDef.Id, lastInput, pipeline.OutputDestination,
-                Parameters: pipeline.Parameters);
-
-            var result = await RunSingleAgentAsync(prevAgentDef, retryRequest, user, ct);
-            if (result.Success) return (result, attempt);
-        }
-
-        return null;
-    }
-
-    private async Task<string> CallLlmAsync(string systemPrompt, string userInput, CancellationToken ct)
-    {
-        var options = new ChatCompletionsOptions
-        {
-            Messages =
-            {
-                new ChatRequestSystemMessage(systemPrompt),
-                new ChatRequestUserMessage(userInput)
-            },
-            Model = _model
-        };
-
-        var response = await aiClient.CompleteAsync(options, ct);
-        return response.Value.Content;
-    }
-
-    private static string BuildSystemPrompt(string agentPrompt, IReadOnlyList<SkillDefinition> skills)
-    {
-        if (skills.Count == 0) return agentPrompt;
-
-        var sb = new StringBuilder(agentPrompt);
-        sb.AppendLine().AppendLine("## Loaded Skills");
-
-        foreach (var skill in skills)
-        {
-            sb.AppendLine($"### {skill.Name} ({skill.Scope})");
-            sb.AppendLine(skill.Instructions);
-            sb.AppendLine();
-        }
-
-        return sb.ToString();
+        return ProcessingResult.Ok("Default pipeline completed successfully", output,
+            warnings.Count > 0 ? warnings : null);
     }
 }

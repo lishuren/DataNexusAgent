@@ -20,11 +20,32 @@ export default function ProcessPage() {
 
   const normalizeUiSchema = (schema: Agent["uiSchema"]): UiField[] => {
     if (!schema) return [];
-    if (Array.isArray(schema)) return schema;
+
+    const normalizeField = (f: Record<string, unknown>): UiField => ({
+      ...(f as object),
+      // Support both `key` (spec) and `name` (legacy seed data / user agents)
+      key: ((f["key"] ?? f["name"]) as string) || "",
+    } as UiField);
+
+    if (Array.isArray(schema)) {
+      return (schema as unknown as Record<string, unknown>[]).map(normalizeField);
+    }
+
     if (typeof schema === "string") {
+      let raw = schema.trim();
+      // Strip markdown: headings, code fences, and anything before the JSON array
+      raw = raw.replace(/^#+\s+.*$/gm, "").trim(); // remove markdown headings
+      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch?.[1]) raw = fenceMatch[1].trim();
+      // Last resort: find first '[' and last ']' to extract JSON array
+      if (!raw.startsWith("[")) {
+        const start = raw.indexOf("[");
+        const end = raw.lastIndexOf("]");
+        if (start !== -1 && end > start) raw = raw.slice(start, end + 1);
+      }
       try {
-        const parsed = JSON.parse(schema) as UiField[];
-        return Array.isArray(parsed) ? parsed : [];
+        const parsed = JSON.parse(raw) as Record<string, unknown>[];
+        return Array.isArray(parsed) ? parsed.map(normalizeField) : [];
       } catch {
         return [];
       }
@@ -100,7 +121,14 @@ export default function ProcessPage() {
       } else {
         res = await processData({
           agentId: selectedAgentId,
-          inputSource: values["file"] ?? values["data"] ?? values["inputSource"] ?? "",
+          // Prefer base64 file content; fall back to text/url fields by common names
+          inputSource:
+            Object.values(values).find((v) => v?.startsWith("data:")) ??
+            values["inputFile"] ??
+            values["file"] ??
+            values["data"] ??
+            values["inputSource"] ??
+            "",
           outputDestination: values["endpoint"] ?? values["outputFormat"] ?? "json",
           skillName: values["skill"],
           parameters: values,

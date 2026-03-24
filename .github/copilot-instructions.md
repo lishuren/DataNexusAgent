@@ -42,13 +42,15 @@ graph TB
             EP_Agents["/api/agents"]
         end
 
-        subgraph "DataNexus Engine  (Dynamic Agent Orchestration)"
+        subgraph "DataNexus Engine  (Microsoft Agent Framework)"
             direction LR
-            SingleRun["RunSingleAgent\n(resolve skills → build prompt → LLM → plugins)"]
-            Pipeline["RunPipeline\n(chain N agents sequentially)"]
-            SelfCorrect["Self-Correction\n(loop back on schema mismatch)"]
-            Pipeline --> SingleRun
-            SingleRun --> SelfCorrect
+            AF["AgentFactory\n(ChatClientAgent · skills · middleware)"]
+            SingleRun["RunSingleAgent\n(plugins → AIAgent.RunAsync → plugins)"]
+            Pipeline["RunPipeline\n(BuildSequential → InProcessExecution)"]
+            SelfCorrect["Self-Correction\n(workflow retry on error)"]
+            AF --> SingleRun
+            AF --> Pipeline
+            Pipeline --> SelfCorrect
         end
 
         AR["AgentRegistry\n(EF Core · CRUD · seeding)"]
@@ -85,8 +87,6 @@ graph TB
     EP_Agents --> AR
     SR --> PG
     AR --> PG
-    SingleRun --> SR
-    SingleRun --> AR
     SingleRun -- "system prompt" --> GH_Models
     SingleRun -- "HTTPS output" --> ExtAPI
     SingleRun -- "DB write" --> PG
@@ -116,12 +116,17 @@ graph TB
   - `UiSchema` — JSON array defining the agent's custom UI fields (see **Agent UI Schema** below).
   - `Scope` — `Public` or `Private`; public agents are visible to all users.
   - Built-in agents (Data Analyst, API Integrator, Report Writer, Data Validator) are seeded on startup.
-- **DataNexusEngine**: Dynamic agent orchestrator. Supports:
-  - **Single-agent execution** — select an agent by ID, engine resolves its skills/plugins and runs.
-  - **External agent execution** — delegates to `ExternalProcessRunner` for CLI/script agents.
-  - **Pipeline execution** — chain multiple agents sequentially (LLM and external can be mixed).
-  - **Self-correction** — on schema mismatch, loops back to the previous agent (up to 3 retries).
-  - **Default mode** — if no `AgentId` specified, falls back to classic Analyst → Integrator relay.
+- **DataNexusEngine**: Dynamic agent orchestrator built on **Microsoft Agent Framework** (v1.0.0-rc4). Supports:
+  - **AgentFactory** — creates `ChatClientAgent` (AF's `IChatClient`-backed `AIAgent`) from database-stored
+    agent definitions. Resolves skills, builds instructions, and wraps with AF audit-logging middleware.
+  - **Single-agent execution** — `AgentFactory.CreateAgentAsync()` → `AIAgent.RunAsync()`,
+    with deterministic plugin sandwich (InputProcessor → LLM → OutputIntegrator).
+  - **External agent execution** — `ExternalAgentAdapter` wraps `ExternalProcessRunner` as an AF `AIAgent`,
+    enabling external CLI/script agents to participate in AF sequential workflows.
+  - **Pipeline execution** — uses `AgentWorkflowBuilder.BuildSequential()` + `InProcessExecution.RunAsync()`
+    to chain agents. Each agent's plugins are embedded as AF middleware for self-contained execution.
+  - **Self-correction** — on plugin error or schema mismatch, retries the entire workflow (up to 3 attempts).
+  - **Default mode** — if no `AgentId` specified, falls back to Analyst → Integrator workflow via `BuildSequential`.
 - **External Agent Runtime** (`ExternalProcessRunner`):
   - Executes CLI / Python / Node / shell scripts as child processes.
   - **Protocol**: JSON on stdin → JSON on stdout. Exit code 0 = success.
@@ -166,7 +171,8 @@ configuration field, evaluated by the engine — never by skill content.
 
 - **Database**: PostgreSQL via `Npgsql.EntityFrameworkCore.PostgreSQL`. Connection string in
   `ConnectionStrings:DataNexus`. Auto-migrated on startup.
-- **Inference**: `Azure.AI.Inference` → GitHub Models (gpt-4o).
+- **Inference**: `IChatClient` from `Microsoft.Extensions.AI` via `OpenAI` SDK → GitHub Models (gpt-4o).
+  All LLM agents are `ChatClientAgent` instances from Microsoft Agent Framework, backed by this `IChatClient`.
 
 ### Agent UI Schema
 
@@ -246,20 +252,12 @@ DataNexus/                          ← monorepo root
 │   ├── Program.cs
 │   ├── appsettings.json
 │   ├── Agents/
-│   │   ├── Af/                     ← Agent Framework integration
-│   │   │   ├── AfChatClientProvider.cs        — singleton IChatClient via GitHub Models
-│   │   │   ├── DynamicWorkflowBuilder.cs      — builds AF Workflow from AgentDefinitions
-│   │   │   ├── ExternalProcessChatClient.cs   — IChatClient adapter for CLI/script agents
-│   │   │   └── WorkflowResultMapper.cs        — maps AgentResponseEvent → ProcessingResult
-│   │   ├── AgentFrameworkExecutionRuntime.cs   — IAgentExecutionRuntime (AF-backed)
-│   │   ├── AgentExecutionRuntimeSelector.cs    — routes to AF or legacy runtime
-│   │   ├── AgentRuntimeOptions.cs              — runtime feature-flag config
-│   │   ├── DataNexusEngine.cs                  — legacy orchestration engine
+│   │   ├── DataNexusEngine.cs                  — orchestration engine (AF workflows)
+│   │   ├── AgentFactory.cs                     — creates ChatClientAgent from AgentDefinition
+│   │   ├── ExternalAgentAdapter.cs             — wraps ExternalProcessRunner as AF AIAgent
 │   │   ├── ExternalProcessRunner.cs            — CLI process execution (security boundary)
 │   │   ├── ExternalAgentOptions.cs             — command allowlist / timeout config
-│   │   ├── IAgentExecutionRuntime.cs           — runtime interface
-│   │   ├── AnalystAgent.cs                     — built-in Analyst agent logic
-│   │   └── ExecutorAgent.cs                    — built-in Executor agent logic
+│   │   └── IAgentExecutionRuntime.cs           — runtime interface
 │   ├── Core/                       ← AgentEntity, AgentRegistry, PipelineEntity, PipelineRegistry, SkillRegistry, SkillDefinition
 │   ├── Endpoints/                  ← ProcessingEndpoints, AgentEndpoints, PipelineEndpoints, SkillsEndpoints
 │   ├── Identity/                   ← KeycloakAuthService, KeycloakMiddleware, UserContext
