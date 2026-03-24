@@ -80,6 +80,131 @@ const FIELD_TYPES: {
 ];
 
 // ---------------------------------------------------------------------------
+// PluginHelpLabel — label + collapsible plugin reference panel
+// ---------------------------------------------------------------------------
+
+const PLUGIN_DOCS = [
+  {
+    name: "InputProcessor",
+    when: "Enable when your agent accepts file or URL input.",
+    timing: "Runs before the LLM",
+    description:
+      "Reads uploaded files (Excel, CSV, JSON) and downloads URLs, converting them to text the model can process.",
+    extra: null,
+  },
+  {
+    name: "OutputIntegrator",
+    when: "Enable only when the agent must write results to an external system.",
+    timing: "Runs after the LLM",
+    description:
+      "Validates output against a schema, then pushes results to an external API or database.",
+    extra: (
+      <>
+        Requires{" "}
+        <code style={{ background: "rgba(var(--primary-rgb), 0.15)", color: "var(--primary)", borderRadius: 3, padding: "1px 4px" }}>
+          ApiEndpoint
+        </code>{" "}
+        in request metadata.
+      </>
+    ),
+  },
+];
+
+function PluginHelpLabel() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ marginBottom: "0.35rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <label className="form-label" style={{ marginBottom: 0 }}>Plugins</label>
+        <button
+          type="button"
+          title="Show plugin details"
+          onClick={() => setOpen((o) => !o)}
+          style={{
+            background: "none",
+            border: "1px solid var(--border)",
+            borderRadius: "50%",
+            width: 22,
+            height: 22,
+            cursor: "pointer",
+            fontSize: "0.75rem",
+            lineHeight: 1,
+            color: open ? "var(--primary)" : "var(--text-muted)",
+            padding: 0,
+            flexShrink: 0,
+          }}
+        >
+          ?
+        </button>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "0.5rem",
+            padding: "0.75rem",
+            marginTop: "0.35rem",
+            marginBottom: "0.4rem",
+            background: "var(--surface)",
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>
+            Available plugins
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            {PLUGIN_DOCS.map((pd, i) => (
+              <div
+                key={pd.name}
+                style={{
+                  display: "flex",
+                  gap: "0.6rem",
+                  fontSize: "0.8rem",
+                  borderBottom: i < PLUGIN_DOCS.length - 1 ? "1px solid var(--border)" : "none",
+                  paddingBottom: "0.4rem",
+                }}
+              >
+                <code
+                  style={{
+                    background: "rgba(var(--primary-rgb), 0.15)",
+                    color: "var(--primary)",
+                    borderRadius: 4,
+                    padding: "2px 6px",
+                    minWidth: 130,
+                    textAlign: "center",
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    alignSelf: "flex-start",
+                  }}
+                >
+                  {pd.name}
+                </code>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 500 }}>{pd.timing}</span>
+                  {" — "}
+                  {pd.description}
+                  {pd.extra && <>{" "}{pd.extra}</>}
+                  {" "}
+                  <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>{pd.when}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: "0.6rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+            Execution order:{" "}
+            <code style={{ background: "rgba(var(--primary-rgb), 0.15)", color: "var(--primary)", borderRadius: 3, padding: "1px 4px" }}>InputProcessor</code>
+            {" → LLM → "}
+            <code style={{ background: "rgba(var(--primary-rgb), 0.15)", color: "var(--primary)", borderRadius: 3, padding: "1px 4px" }}>OutputIntegrator</code>
+            {". Plugins perform real I/O — skills cannot activate them."}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // UiSchemaEditor — textarea + collapsible help panel
 // ---------------------------------------------------------------------------
 
@@ -438,7 +563,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
 
       {/* Plugins */}
       <div style={{ marginBottom: "0.75rem" }}>
-        <label className="form-label">Plugins</label>
+        <PluginHelpLabel />
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           {KNOWN_PLUGINS.map((p) => (
             <label key={p} style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.875rem" }}>

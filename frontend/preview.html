@@ -353,7 +353,35 @@ Duration: 3.2s
         <div class="card">
           <h2>➕ Create Skill</h2>
           <input placeholder="Skill name (e.g. custom-parser)" value="currency-converter" />
-          <textarea placeholder="Skill instructions in markdown...">Whenever you see a currency amount with a $ symbol, convert it to EUR using a 1:0.92 rate. Output as a decimal with 2 decimal places. Strip the currency symbol.</textarea>
+
+          <!-- Skill instructions label + help toggle -->
+          <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+            <label style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0;">
+              Instructions <span style="font-weight:400;">(markdown — injected verbatim into the agent's system prompt)</span>
+            </label>
+            <button
+              id="skill-help-btn"
+              title="Show skill authoring tips"
+              onclick="var p=document.getElementById('skill-help'); p.style.display=p.style.display==='none'?'block':'none'; this.style.color=p.style.display==='none'?'':'var(--primary)';"
+              style="background:none; border:1px solid var(--border); border-radius:50%; width:22px; height:22px; cursor:pointer; font-size:0.75rem; line-height:1; color:var(--text-muted); padding:0; flex-shrink:0;"
+            >?</button>
+          </div>
+
+          <!-- Skill help panel -->
+          <div id="skill-help" style="display:none; border:1px solid var(--border); border-radius:0.5rem; padding:0.75rem; margin-bottom:0.5rem; background:var(--surface);">
+            <div style="font-weight:600; margin-bottom:0.5rem; font-size:0.85rem;">Writing good skills</div>
+            <ul style="font-size:0.8rem; color:var(--text-muted); padding-left:1.2rem; margin-bottom:0.75rem; line-height:1.7;">
+              <li>Write clear, imperative sentences — the LLM follows them literally.</li>
+              <li>Use <strong>Rules</strong> sections for transformations the model must always apply.</li>
+              <li>Use <strong>Examples</strong> to show exact input → output pairs.</li>
+              <li>Keep skills focused on one domain — combine multiple skills on the agent instead.</li>
+              <li>Skills are passive knowledge only — they cannot trigger plugins or API calls.</li>
+            </ul>
+            <div style="font-weight:600; margin-bottom:0.4rem; font-size:0.85rem;">Insert a section template</div>
+            <div id="skill-section-list"></div>
+          </div>
+
+          <textarea id="create-skill-instructions" placeholder="Skill instructions in markdown..." style="min-height:280px; margin-top:0;">Whenever you see a currency amount with a $ symbol, convert it to EUR using a 1:0.92 rate. Output as a decimal with 2 decimal places. Strip the currency symbol.</textarea>
           <button class="btn btn-primary">Create Skill</button>
         </div>
 
@@ -451,7 +479,31 @@ Duration: 3.2s
           <textarea id="create-agent-desc" placeholder="Description" style="min-height:50px;">Classify emails and extract entities</textarea>
 
           <div style="margin-bottom:0.75rem;">
-            <label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">Plugins</label>
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+              <label style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0;">Plugins</label>
+              <button
+                id="plugin-help-btn"
+                title="Show plugin details"
+                onclick="var p=document.getElementById('plugin-help'); p.style.display=p.style.display==='none'?'block':'none'; this.style.color=p.style.display==='none'?'':'var(--primary)';"
+                style="background:none; border:1px solid var(--border); border-radius:50%; width:22px; height:22px; cursor:pointer; font-size:0.75rem; line-height:1; color:var(--text-muted); padding:0; flex-shrink:0;"
+              >?</button>
+            </div>
+            <div id="plugin-help" style="display:none; border:1px solid var(--border); border-radius:0.5rem; padding:0.75rem; margin-bottom:0.5rem; background:var(--surface);">
+              <div style="font-weight:600; margin-bottom:0.5rem; font-size:0.85rem;">Available plugins</div>
+              <div style="display:flex; flex-direction:column; gap:0.4rem;">
+                <div style="display:flex; gap:0.6rem; font-size:0.8rem; border-bottom:1px solid var(--border); padding-bottom:0.4rem;">
+                  <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:4px; padding:2px 6px; min-width:130px; text-align:center; font-weight:600; flex-shrink:0;">InputProcessor</code>
+                  <div style="flex:1;"><span style="font-weight:500;">Runs before the LLM</span> — reads uploaded files (Excel, CSV, JSON), downloads URLs, and converts them to text the model can process. <span style="color:var(--text-muted); font-style:italic;">Enable when your agent accepts file or URL input.</span></div>
+                </div>
+                <div style="display:flex; gap:0.6rem; font-size:0.8rem; padding-bottom:0.4rem;">
+                  <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:4px; padding:2px 6px; min-width:130px; text-align:center; font-weight:600; flex-shrink:0;">OutputIntegrator</code>
+                  <div style="flex:1;"><span style="font-weight:500;">Runs after the LLM</span> — validates output against a schema, then pushes results to an external API or database. Requires <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">ApiEndpoint</code> in request metadata. <span style="color:var(--text-muted); font-style:italic;">Enable only when the agent must write results to an external system.</span></div>
+                </div>
+              </div>
+              <div style="margin-top:0.6rem; font-size:0.75rem; color:var(--text-muted);">
+                Execution order: <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">InputProcessor</code> → LLM → <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">OutputIntegrator</code>. Plugins perform real I/O — skills cannot activate them.
+              </div>
+            </div>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
               <span class="badge" style="background:rgba(224,120,80,0.15); color:var(--primary); padding:4px 10px; font-size:0.75rem;">InputProcessor ✕</span>
               <button class="pipeline-add" style="padding:2px 8px;">+ Add plugin</button>
@@ -792,6 +844,34 @@ Duration: 3.2s
         card.classList.add('selected');
       });
     });
+
+    // ── Skill authoring help panel section templates ──
+    (function buildSkillHelp() {
+      const SECTION_TEMPLATES = [
+        { label: 'Purpose',      description: 'What this skill teaches the LLM to do.',                  template: '## Purpose\n\nDescribe the goal of this skill in one or two sentences.' },
+        { label: 'Rules',        description: 'Numbered or bulleted instructions the LLM must follow.',   template: '## Rules\n\n- Rule one.\n- Rule two.\n- Rule three.' },
+        { label: 'Type Mapping', description: 'A table mapping input patterns to output types.',           template: '## Type Mapping\n\n| Input Pattern | Output Type |\n| ------------- | ----------- |\n| Example A     | Type X      |\n| Example B     | Type Y      |' },
+        { label: 'Examples',     description: 'Concrete input → output pairs to guide the model.',        template: '## Examples\n\n**Input:** `raw value here`\n**Output:** `transformed value here`' },
+        { label: 'Constraints',  description: 'Hard limits or things the LLM must never do.',             template: '## Constraints\n\n- Never include X.\n- Always output valid JSON.\n- Do not infer missing fields — use null.' },
+      ];
+
+      const container = document.getElementById('skill-section-list');
+      if (!container) return;
+
+      SECTION_TEMPLATES.forEach(st => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:0.6rem; font-size:0.8rem; border-bottom:1px solid var(--border); padding-bottom:0.35rem; margin-bottom:0.35rem;';
+        row.innerHTML = `
+          <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:4px; padding:2px 6px; min-width:90px; text-align:center; font-weight:600; flex-shrink:0;">${st.label}</code>
+          <span style="flex:1; color:var(--text-muted);">${st.description}</span>
+          <button class="btn btn-outline btn-sm" style="font-size:0.75rem; padding:2px 8px; flex-shrink:0;">+ Insert</button>`;
+        row.querySelector('button').addEventListener('click', function() {
+          const ta = document.getElementById('create-skill-instructions');
+          ta.value = ta.value ? ta.value + '\n\n' + st.template : st.template;
+        });
+        container.appendChild(row);
+      });
+    })();
 
     // ── UI Schema help panel field-type catalogue ──
     (function buildUiSchemaHelp() {
