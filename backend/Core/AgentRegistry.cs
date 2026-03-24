@@ -324,7 +324,7 @@ public sealed class AgentRegistry(
                 """,
             UiSchema = """
                 [
-                  {"key":"file","type":"file","label":"Data File","accept":".xlsx,.xls,.csv,.json","required":true},
+                  {"key":"file","type":"file","label":"Data File","accept":".xlsx,.xls,.csv,.json,.txt,.md,.xml,.tsv","required":true},
                   {"key":"task","type":"textarea","label":"Task Description","placeholder":"Describe what you want done, e.g.\n• Rename columns to snake_case\n• Filter rows where status = active\n• Convert dates to ISO 8601"},
                   {"key":"outputFormat","type":"select","label":"Output Format","options":["JSON","CSV","SQL"]},
                   {"key":"skill","type":"text","label":"Skill to apply (optional)","placeholder":"e.g. ExcelToSqlMapping"}

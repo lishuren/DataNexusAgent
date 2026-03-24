@@ -27,6 +27,7 @@ public sealed class InputProcessorPlugin(
                 "excel" => await ParseExcelAsync(context.InputData, ct),
                 "json" => ParseJson(context.InputData),
                 "csv" => ParseCsv(context.InputData),
+                "text" => ParseText(context.InputData),
                 _ => throw new NotSupportedException($"Unsupported input type: {inputType}")
             };
 
@@ -118,6 +119,23 @@ public sealed class InputProcessorPlugin(
             if (isTempFile && File.Exists(filePath))
                 File.Delete(filePath);
         }
+    }
+
+    private static string ParseText(string input)
+    {
+        // Decode base64 data URL to raw text, then wrap as JSON so the LLM gets clean content.
+        if (input.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var commaIdx = input.IndexOf(',');
+            if (commaIdx >= 0)
+            {
+                var bytes = Convert.FromBase64String(input[(commaIdx + 1)..]);
+                var text = Encoding.UTF8.GetString(bytes);
+                return JsonSerializer.Serialize(new { content = text }, JsonSerializerOptions.Web);
+            }
+        }
+        // Already plain text
+        return JsonSerializer.Serialize(new { content = input }, JsonSerializerOptions.Web);
     }
 
     private static string ParseJson(string input)
@@ -246,12 +264,29 @@ public sealed class InputProcessorPlugin(
 
     private static string DetectInputType(string input)
     {
-        // Base64 data URL from browser file upload
+        // Base64 data URL from browser file upload — parse the MIME type to detect format.
         if (input.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
-            return input.Contains("spreadsheet") || input.Contains("excel") || input.Contains("xlsx")
-                ? "excel"
-                : "excel"; // treat all uploaded binary files as Excel by default
+            var semicolonIdx = input.IndexOf(';');
+            var mime = semicolonIdx > 5 ? input[5..semicolonIdx].ToLowerInvariant() : string.Empty;
+
+            return mime switch
+            {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    or "application/vnd.ms-excel"
+                    or "application/x-excel"
+                    or "application/x-msexcel" => "excel",
+                "application/json" => "json",
+                "text/csv" => "csv",
+                "text/plain"
+                    or "text/markdown"
+                    or "text/xml"
+                    or "application/xml" => "text",
+                // Unknown binary (e.g. older .xls without proper MIME) — attempt Excel
+                _ when !mime.StartsWith("text/") => "excel",
+                // Unknown text type — pass through as text
+                _ => "text"
+            };
         }
 
         if (input.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) ||
