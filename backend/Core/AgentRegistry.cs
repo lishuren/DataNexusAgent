@@ -302,7 +302,7 @@ public sealed class AgentRegistry(
         {
             Name = "Data Analyst",
             Icon = "🧠",
-            Description = "Parse, clean, and transform data with skill-based rules",
+            Description = "Upload any file (Excel, CSV, JSON, TXT, code…) and describe what you want — summarize, transform, extract, convert, or analyze. Outputs JSON, CSV, or SQL.",
             SystemPrompt = """
                 You are the DataNexus Analyst Agent. Your role is to:
                 1. Parse and understand the incoming data (Excel, CSV, JSON).

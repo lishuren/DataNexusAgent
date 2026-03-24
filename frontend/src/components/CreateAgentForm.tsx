@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createAgent, updateAgent } from "@/services/api";
+import { useSkills } from "@/hooks/useSkills";
 import type { Agent } from "@/types/api";
 
 interface CreateAgentFormProps {
@@ -8,9 +9,7 @@ interface CreateAgentFormProps {
   onCancel?: () => void;
 }
 
-const pluginDisplayName = (plugin: string) => plugin;
-
-const normalizePluginName = (plugin: string) => plugin;
+const KNOWN_PLUGINS = ["InputProcessor", "OutputIntegrator"];
 
 const normalizeList = (value: string[] | string | null | undefined) => {
   if (!value) return [];
@@ -19,6 +18,7 @@ const normalizeList = (value: string[] | string | null | undefined) => {
 };
 
 export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormProps) {
+  const { skills: availableSkills } = useSkills();
   const [execType, setExecType] = useState<"Llm" | "External">("Llm");
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("📧");
@@ -31,8 +31,6 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
   const [timeout, setTimeout] = useState(30);
   const [plugins, setPlugins] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
-  const [pluginInput, setPluginInput] = useState("");
-  const [skillInput, setSkillInput] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -119,20 +117,21 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
     }
   };
 
-  const addPlugin = () => {
-    const normalized = normalizePluginName(pluginInput.trim());
-    if (normalized && !plugins.includes(normalized)) {
-      setPlugins([...plugins, normalized]);
-      setPluginInput("");
-    }
+  const addPlugin = (p: string) => {
+    if (!plugins.includes(p)) setPlugins([...plugins, p]);
   };
 
-  const addSkill = () => {
-    if (skillInput.trim() && !skills.includes(skillInput.trim())) {
-      setSkills([...skills, skillInput.trim()]);
-      setSkillInput("");
-    }
+  const removePlugin = (p: string) => setPlugins(plugins.filter((x) => x !== p));
+
+  const togglePlugin = (p: string) => {
+    plugins.includes(p) ? removePlugin(p) : addPlugin(p);
   };
+
+  const addSkill = (name: string) => {
+    if (name && !skills.includes(name)) setSkills([...skills, name]);
+  };
+
+  const removeSkill = (name: string) => setSkills(skills.filter((x) => x !== name));
 
   return (
     <div className="card">
@@ -238,41 +237,43 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
       {/* Plugins */}
       <div style={{ marginBottom: "0.75rem" }}>
         <label className="form-label">Plugins</label>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-          {plugins.map((p) => (
-            <span key={p} className="badge badge-private" style={{ padding: "4px 10px", cursor: "pointer" }} onClick={() => setPlugins(plugins.filter((x) => x !== p))}>
-              {pluginDisplayName(p)} ✕
-            </span>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          {KNOWN_PLUGINS.map((p) => (
+            <label key={p} style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.875rem" }}>
+              <input
+                type="checkbox"
+                checked={plugins.includes(p)}
+                onChange={() => togglePlugin(p)}
+                style={{ width: "auto", marginBottom: 0 }}
+              />
+              {p}
+            </label>
           ))}
-          <input
-            style={{ width: "auto", flex: 1, minWidth: 120, marginBottom: 0 }}
-            placeholder="Plugin name (e.g. InputProcessor)"
-            value={pluginInput}
-            onChange={(e) => setPluginInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addPlugin()}
-          />
-          <button className="pipeline-add" type="button" style={{ padding: "2px 8px" }} onClick={addPlugin}>+ Add</button>
         </div>
       </div>
 
       {/* Skills */}
       <div style={{ marginBottom: "0.75rem" }}>
-        <label className="form-label">Skills (injected into system prompt)</label>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+        <label className="form-label">Skills <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(injected into system prompt)</span></label>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
           {skills.map((s) => (
-            <span key={s} className="badge badge-public" style={{ padding: "4px 10px", cursor: "pointer" }} onClick={() => setSkills(skills.filter((x) => x !== s))}>
+            <span key={s} className="badge badge-public" style={{ padding: "4px 10px", cursor: "pointer" }} onClick={() => removeSkill(s)}>
               {s} ✕
             </span>
           ))}
-          <input
-            style={{ width: "auto", flex: 1, minWidth: 120, marginBottom: 0 }}
-            placeholder="Skill name (e.g. InvoiceExcelExtractor)"
-            value={skillInput}
-            onChange={(e) => setSkillInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addSkill()}
-          />
-          <button className="pipeline-add" type="button" style={{ padding: "2px 8px" }} onClick={addSkill}>+ Add</button>
         </div>
+        <select
+          style={{ marginBottom: 0 }}
+          value=""
+          onChange={(e) => { addSkill(e.target.value); e.target.value = ""; }}
+        >
+          <option value="" disabled>— select a skill to add —</option>
+          {availableSkills
+            .filter((s) => !skills.includes(s.name))
+            .map((s) => (
+              <option key={s.id} value={s.name}>{s.name}{s.scope === "Public" ? " (public)" : ""}</option>
+            ))}
+        </select>
       </div>
 
       {/* UI Schema */}
