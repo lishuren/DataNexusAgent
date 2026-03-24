@@ -466,6 +466,26 @@ Duration: 3.2s
             </div>
           </div>
 
+          <!-- UI Schema with help panel -->
+          <div style="margin-bottom:0.75rem;">
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+              <label style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0;">UI Schema <span style="font-weight:400;">(JSON array — defines form fields on the Process page)</span></label>
+              <button
+                id="uischema-help-btn"
+                title="Show available field types"
+                onclick="document.getElementById('uischema-help').style.display = document.getElementById('uischema-help').style.display==='none' ? 'block' : 'none'; this.style.color = document.getElementById('uischema-help').style.display==='none' ? '' : 'var(--primary)'"
+                style="background:none; border:1px solid var(--border); border-radius:50%; width:22px; height:22px; cursor:pointer; font-size:0.75rem; line-height:1; color:var(--text-muted); padding:0; flex-shrink:0;"
+              >?</button>
+            </div>
+            <!-- Help panel (collapsed by default) -->
+            <div id="uischema-help" style="display:none; border:1px solid var(--border); border-radius:0.5rem; padding:0.75rem; margin-bottom:0.5rem; background:var(--surface);">
+              <div style="font-weight:600; margin-bottom:0.5rem; font-size:0.85rem;">Available field types — click <strong>+ Insert</strong> to add a template</div>
+              <div id="uischema-field-list"></div>
+              <div style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">All fields support <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">key</code> (unique id), <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">label</code>, <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">type</code>, and optional <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:3px; padding:1px 4px;">required: true</code>.</div>
+            </div>
+            <textarea id="create-agent-uischema" placeholder='[{"key":"file","label":"Upload file","type":"file","accept":".xlsx"}]' style="min-height:80px; font-family:monospace; font-size:0.8rem; margin-bottom:0;"></textarea>
+          </div>
+
           <button class="btn btn-primary">Create Agent</button>
         </div>
 
@@ -772,6 +792,39 @@ Duration: 3.2s
         card.classList.add('selected');
       });
     });
+
+    // ── UI Schema help panel field-type catalogue ──
+    (function buildUiSchemaHelp() {
+      const FIELD_TYPES = [
+        { type: 'file',     label: 'File upload',       description: 'Drag-and-drop file zone.',        extras: 'accept: ".xlsx,.csv"',         template: { key: 'file',     label: 'Upload File',     type: 'file',     accept: '.xlsx,.csv,.json', required: true } },
+        { type: 'text',     label: 'Text input',        description: 'Single-line text field.',         extras: 'placeholder',                  template: { key: 'myField',  label: 'My Field',        type: 'text',     placeholder: 'Enter value…' } },
+        { type: 'textarea', label: 'Textarea',          description: 'Multi-line text area.',           extras: 'placeholder',                  template: { key: 'notes',    label: 'Notes',           type: 'textarea', placeholder: 'Type here…' } },
+        { type: 'url',      label: 'URL input',         description: 'URL-validated text field.',       extras: 'placeholder',                  template: { key: 'endpoint', label: 'Endpoint URL',    type: 'url',      placeholder: 'https://…' } },
+        { type: 'select',   label: 'Dropdown',          description: 'Pick-one from a fixed list.',     extras: 'options: ["A","B","C"]',        template: { key: 'format',   label: 'Output Format',   type: 'select',   options: ['JSON','CSV','SQL'] } },
+        { type: 'number',   label: 'Number',            description: 'Numeric input field.',            extras: 'placeholder',                  template: { key: 'limit',    label: 'Row Limit',       type: 'number',   placeholder: '100' } },
+        { type: 'toggle',   label: 'Toggle (checkbox)', description: 'Boolean checkbox with a label.',  extras: 'default: "true" | "false"',    template: { key: 'verbose',  label: 'Verbose Output',  type: 'toggle',   default: 'false' } },
+      ];
+
+      const container = document.getElementById('uischema-field-list');
+      if (!container) return;
+
+      FIELD_TYPES.forEach(ft => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:0.6rem; font-size:0.8rem; border-bottom:1px solid var(--border); padding-bottom:0.35rem; margin-bottom:0.35rem;';
+        row.innerHTML = `
+          <code style="background:rgba(var(--primary-rgb),0.15); color:var(--primary); border-radius:4px; padding:2px 6px; min-width:72px; text-align:center; font-weight:600; flex-shrink:0;">${ft.type}</code>
+          <div style="flex:1;"><span style="font-weight:500;">${ft.label}</span> — <span style="color:var(--text-muted);">${ft.description}</span> <span style="color:var(--text-muted); font-style:italic;">Extra: ${ft.extras}</span></div>
+          <button class="btn btn-outline btn-sm" style="font-size:0.75rem; padding:2px 8px; flex-shrink:0;" data-type="${ft.type}">+ Insert</button>`;
+        row.querySelector('button').addEventListener('click', function() {
+          const ta = document.getElementById('create-agent-uischema');
+          let current = [];
+          try { const p = JSON.parse(ta.value || '[]'); if (Array.isArray(p)) current = p; } catch {}
+          current.push(ft.template);
+          ta.value = JSON.stringify(current, null, 2);
+        });
+        container.appendChild(row);
+      });
+    })();
 
     // ── Toggle LLM / External on Create Agent form ──
     function toggleExecType(type) {
