@@ -18,11 +18,13 @@ export function AgentSelector({
   onSelectAgent,
   onSelectPipeline,
 }: AgentSelectorProps) {
+  const sortedAgents = [...agents].sort((a, b) => Number(a.isBuiltIn) - Number(b.isBuiltIn));
+
   return (
     <div className="card">
       <h2>🤖 Select Agent</h2>
       <div className="agent-grid" style={{ marginBottom: "1rem" }}>
-        {agents.map((a) => (
+        {sortedAgents.map((a) => (
           <AgentCard
             key={a.id}
             agent={a}

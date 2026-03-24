@@ -193,25 +193,29 @@ export default function AgentsPage() {
         )}
         <div className="agent-grid">
           {agents.map((a) => (
-            <div key={a.id} style={{ position: "relative" }}>
-              <AgentCard agent={a} />
-              <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: "0.35rem" }}>
-                {a.scope === "Private" && !a.isBuiltIn && a.ownerId === userId && (
+            <div key={a.id} className="agent-card-wrapper">
+              {a.scope === "Private" && !a.isBuiltIn && a.ownerId === userId && (
+                <div className="agent-card-publish-corner">
                   <button
                     className="btn btn-sm btn-primary"
-                    onClick={() => handlePublish(a.id)}
+                    onClick={(e) => { e.stopPropagation(); handlePublish(a.id); }}
                   >
                     Publish
                   </button>
-                )}
-                {a.scope === "Public" && a.publishedByUserId === userId && (
+                </div>
+              )}
+              {a.scope === "Public" && a.publishedByUserId === userId && (
+                <div className="agent-card-publish-corner">
                   <button
                     className="btn btn-sm btn-outline"
-                    onClick={() => handleUnpublish(a.id)}
+                    onClick={(e) => { e.stopPropagation(); handleUnpublish(a.id); }}
                   >
                     Unpublish
                   </button>
-                )}
+                </div>
+              )}
+              <AgentCard agent={a} />
+              <div className="agent-card-actions">
                 {a.ownerId === userId && a.scope === "Private" && !a.isBuiltIn && (
                   <button
                     className="btn btn-sm btn-outline"

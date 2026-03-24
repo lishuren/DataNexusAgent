@@ -1,9 +1,13 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { getDisplayName, logout } from "@/services/auth";
+import { loadDisplayName, logout } from "@/services/auth";
 
 export function Layout() {
-  const displayName = getDisplayName();
+  const [displayName, setDisplayName] = useState<string | undefined>();
 
+  useEffect(() => {
+    loadDisplayName().then(setDisplayName);
+  }, []);
   return (
     <div className="app">
       <header>
@@ -11,7 +15,7 @@ export function Layout() {
           <span style={{ color: "var(--primary)" }}>⬡</span> DataNexus
         </h1>
         <nav>
-          <NavLink to="/">Process</NavLink>
+          <NavLink to="/">Execute</NavLink>
           <NavLink to="/agents">Agents</NavLink>
           <NavLink to="/skills">Skills</NavLink>
           <NavLink to="/marketplace">Marketplace</NavLink>

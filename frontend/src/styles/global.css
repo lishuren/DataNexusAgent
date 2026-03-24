@@ -1,14 +1,15 @@
 :root {
-  --bg: #1a1018;
-  --surface: #251c24;
-  --border: #3d2e3a;
-  --text: #f0e6eb;
-  --text-muted: #b09aa8;
-  --primary: #e07850;
-  --primary-hover: #f09070;
-  --accent: #c06080;
-  --success: #5ab878;
-  --danger: #e05555;
+  --bg: #1c0e05;
+  --surface: #2b1a09;
+  --border: #6b3d1e;
+  --text: #fff5e6;
+  --text-muted: #e0a868;
+  --primary: #f47c20;
+  --primary-hover: #f99a42;
+  --primary-rgb: 244, 124, 32;
+  --accent: #e84255;
+  --success: #65c470;
+  --danger: #e03838;
 }
 
 * {
@@ -20,7 +21,7 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", sans-serif;
-  background: var(--bg);
+  background: radial-gradient(ellipse at 50% 110%, #3d1a04 0%, #1c0e05 60%);
   color: var(--text);
   line-height: 1.6;
 }
@@ -37,7 +38,8 @@ header {
   align-items: center;
   padding: 1rem 2rem;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: linear-gradient(90deg, #1f0d04 0%, #2a1206 60%, #221008 100%);
+  box-shadow: 0 1px 24px rgba(var(--primary-rgb), 0.08);
 }
 
 header h1 {
@@ -405,7 +407,7 @@ textarea {
 
 .agent-card.selected {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(224, 120, 80, 0.25);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.28), 0 0 18px rgba(var(--primary-rgb), 0.12);
 }
 
 .agent-card .agent-icon {
@@ -436,7 +438,7 @@ textarea {
   font-size: 0.65rem;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(224, 120, 80, 0.1);
+  background: rgba(var(--primary-rgb), 0.12);
   color: var(--primary);
 }
 
@@ -444,6 +446,56 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.75rem;
+}
+
+/* Agent card with action footer */
+.agent-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.agent-card-wrapper .agent-card {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+  flex: 1;
+}
+
+.agent-card-wrapper .agent-card:hover {
+  border-bottom-color: transparent;
+}
+
+.agent-card-actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  padding: 0.4rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 1px solid rgba(var(--primary-rgb), 0.12);
+  border-radius: 0 0 0.75rem 0.75rem;
+}
+
+.agent-card-wrapper:hover .agent-card {
+  border-color: var(--primary);
+}
+
+.agent-card-wrapper:hover .agent-card-actions {
+  border-color: var(--primary);
+  border-top-color: rgba(var(--primary-rgb), 0.2);
+}
+
+.agent-card-publish-corner {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  opacity: 0.7;
+}
+
+.agent-card-publish-corner:hover {
+  opacity: 1;
 }
 
 /* Dynamic agent UI form */
@@ -514,7 +566,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  background: rgba(224, 120, 80, 0.1);
+  background: rgba(var(--primary-rgb), 0.12);
   border: 1px solid var(--primary);
   padding: 0.4rem 0.75rem;
   border-radius: 0.5rem;
@@ -588,7 +640,7 @@ textarea {
 /* Protocol info box */
 .protocol-info {
   padding: 0.75rem;
-  background: rgba(224, 120, 80, 0.05);
+  background: rgba(var(--primary-rgb), 0.05);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   margin-bottom: 0.75rem;
@@ -617,7 +669,7 @@ textarea {
 }
 
 .agent-picker-item:hover {
-  background: rgba(224, 120, 80, 0.1);
+  background: rgba(var(--primary-rgb), 0.12);
 }
 
 .agent-picker-item:last-child {
