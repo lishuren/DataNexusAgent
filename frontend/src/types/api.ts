@@ -56,11 +56,19 @@ export interface PipelineRequest {
   parameters?: Record<string, string>;
 }
 
+export interface ProcessingDebugInfo {
+  parsedInputPreview: string;
+  parsedInputLength: number;
+  skillsUsed: string[];
+  rawLlmResponse: string;
+}
+
 export interface ProcessingResult {
   success: boolean;
   message: string;
   data?: unknown;
   warnings?: string[];
+  debug?: ProcessingDebugInfo;
 }
 
 export interface Pipeline {

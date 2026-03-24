@@ -186,9 +186,20 @@ public sealed class DataNexusEngine(
             "[User: {UserId}] Agent '{Agent}' completed",
             user.UserId, agent.Name);
 
+        // Build debug info so users can diagnose prompt/skill/input issues
+        const int previewLen = 800;
+        var debugInfo = new ProcessingDebugInfo(
+            ParsedInputPreview: inputData.Length > previewLen
+                ? inputData[..previewLen] + "…"
+                : inputData,
+            ParsedInputLength: inputData.Length,
+            SkillsUsed: agent.SkillNames,
+            RawLlmResponse: llmResponse);
+
         return ProcessingResult.Ok(
             $"Agent '{agent.Name}' completed successfully",
-            llmResponse);
+            llmResponse,
+            debug: debugInfo);
     }
 
     /// <summary>The original two-agent relay for backward compatibility, now using AF agents.</summary>

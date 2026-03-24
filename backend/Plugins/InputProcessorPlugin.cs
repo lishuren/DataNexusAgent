@@ -70,23 +70,48 @@ public sealed class InputProcessorPlugin(
         try
         {
             using var workbook = new XLWorkbook(filePath);
-            var worksheet = workbook.Worksheets.First();
-            var rows = new List<Dictionary<string, string>>();
 
-            var headers = worksheet.Row(1).CellsUsed()
-                .Select(c => c.GetString())
-                .ToList();
+            // Parse ALL worksheets so the LLM sees the full workbook.
+            // An invoice file often spreads data across multiple sheets.
+            var output = new Dictionary<string, object>();
 
-            foreach (var row in worksheet.RowsUsed().Skip(1))
+            foreach (var worksheet in workbook.Worksheets)
             {
-                var rowData = new Dictionary<string, string>();
-                for (var i = 0; i < headers.Count; i++)
-                    rowData[headers[i]] = row.Cell(i + 1).GetString();
+                var row1Cells = worksheet.Row(1).CellsUsed().ToList();
+                var row2Cells = worksheet.Row(2).CellsUsed().ToList();
 
-                rows.Add(rowData);
+                // Tabular: both rows have 3+ non-empty cells → treat row 1 as headers.
+                // Label-value: invoices, forms → read each cell by its column address.
+                var isTabular = row1Cells.Count >= 3 && row2Cells.Count >= 3;
+
+                if (isTabular)
+                {
+                    var headers = row1Cells.Select(c => c.GetString()).ToList();
+                    var rows = new List<Dictionary<string, string>>();
+                    foreach (var row in worksheet.RowsUsed().Skip(1))
+                    {
+                        var rowData = new Dictionary<string, string>();
+                        for (var i = 0; i < headers.Count; i++)
+                            rowData[headers[i]] = row.Cell(i + 1).GetString();
+                        rows.Add(rowData);
+                    }
+                    output[worksheet.Name] = rows;
+                }
+                else
+                {
+                    var rows = new List<Dictionary<string, string>>();
+                    foreach (var row in worksheet.RowsUsed())
+                    {
+                        var rowData = new Dictionary<string, string>();
+                        foreach (var cell in row.CellsUsed())
+                            rowData[cell.Address.ColumnLetter] = cell.GetString();
+                        rows.Add(rowData);
+                    }
+                    output[worksheet.Name] = rows;
+                }
             }
 
-            return JsonSerializer.Serialize(rows, JsonSerializerOptions.Web);
+            return JsonSerializer.Serialize(output, JsonSerializerOptions.Web);
         }
         finally
         {

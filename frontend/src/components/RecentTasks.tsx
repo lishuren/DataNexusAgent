@@ -18,7 +18,9 @@ export function RecentTasks() {
   if (tasks.length === 0) return null;
 
   const formatTime = (iso: string) => {
-    const diff = Date.now() - new Date(iso).getTime();
+    // Append 'Z' if no timezone info — server stores UTC but may omit the suffix
+    const utc = /Z$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + "Z";
+    const diff = Date.now() - new Date(utc).getTime();
     const mins = Math.floor(diff / 60_000);
     if (mins < 1) return "Just now";
     if (mins < 60) return `${mins} min ago`;

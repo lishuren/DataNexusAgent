@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { UiField } from "@/types/api";
 
 interface DynamicFormProps {
@@ -7,6 +8,15 @@ interface DynamicFormProps {
 }
 
 export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
+  const [fileNames, setFileNames] = useState<Record<string, string>>({});
+
+  const handleFile = (key: string, file: File) => {
+    setFileNames((prev) => ({ ...prev, [key]: file.name }));
+    const reader = new FileReader();
+    reader.onload = () => onChange(key, reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="dynamic-form">
       <div className="form-grid">
@@ -20,11 +30,30 @@ export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
               </label>
 
               {f.type === "file" && (
-                <div className="file-drop" onClick={(e) => {
-                  const input = (e.currentTarget as HTMLElement).querySelector("input");
-                  input?.click();
-                }}>
-                  📁 {f.placeholder ?? "Drop file here or click to browse"}
+                <div
+                  className="file-drop"
+                  onClick={(e) => {
+                    const input = (e.currentTarget as HTMLElement).querySelector("input");
+                    input?.click();
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add("drag-over");
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove("drag-over");
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("drag-over");
+                    const file = e.dataTransfer.files[0];
+                    if (!file) return;
+                    handleFile(f.key, file);
+                  }}
+                >
+                  {fileNames[f.key]
+                    ? <><span style={{ color: "var(--primary)" }}>✔</span> {fileNames[f.key]}</>
+                    : <>📁 {f.placeholder ?? "Drop file here or click to browse"}</>}
                   <input
                     type="file"
                     accept={f.accept}
@@ -32,9 +61,7 @@ export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => onChange(f.key, reader.result as string);
-                      reader.readAsDataURL(file);
+                      handleFile(f.key, file);
                     }}
                   />
                 </div>

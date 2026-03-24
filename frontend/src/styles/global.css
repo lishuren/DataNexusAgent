@@ -195,6 +195,20 @@ textarea {
   align-items: center;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.skill-list li > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  margin-right: 0.5rem;
+}
+
+.skill-list li > span:last-child {
+  flex-shrink: 0;
 }
 
 .skill-list li:last-child {
@@ -206,7 +220,112 @@ textarea {
   border-radius: 0.5rem;
   margin-top: 1rem;
   font-size: 0.875rem;
+  overflow: hidden;
+}
+
+.result-data {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.result-data-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.btn-copy {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.btn-copy:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.result-data-pre {
+  margin: 0;
+  padding: 0.75rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
   white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  color: var(--text);
+}
+
+/* Debug panel */
+.result-debug {
+  margin-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.result-debug-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.result-debug-toggle:hover {
+  color: var(--text);
+}
+
+.result-debug-skills {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.result-debug-body {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.result-debug-section {
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.result-debug-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.result-debug-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .result-success {
@@ -333,6 +452,12 @@ textarea {
 
 .dynamic-form .file-drop:hover {
   border-color: var(--primary);
+  color: var(--primary);
+}
+
+.dynamic-form .file-drop.drag-over {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--primary);
 }
 

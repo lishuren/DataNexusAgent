@@ -28,7 +28,7 @@ public static class ProcessingEndpoints
 
             await history.RecordAsync(new TaskHistoryEntity
             {
-                Summary = $"{request.InputSource} → {request.OutputDestination}",
+                Summary = $"{SummarizeSource(request.InputSource)} → {request.OutputDestination}",
                 AgentId = request.AgentId,
                 Success = result.Success,
                 Message = result.Message,
@@ -71,5 +71,25 @@ public static class ProcessingEndpoints
         });
 
         return routes;
+    }
+
+    /// <summary>Replaces base64 data URLs with a short label so task history is readable.</summary>
+    private static string SummarizeSource(string source)
+    {
+        if (source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            // e.g. "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,..."
+            var semi = source.IndexOf(';');
+            var mimeType = semi > 5 ? source[5..semi] : "file";
+            var ext = mimeType switch
+            {
+                var m when m.Contains("spreadsheet") || m.Contains("excel") => ".xlsx",
+                var m when m.Contains("csv") => ".csv",
+                var m when m.Contains("json") => ".json",
+                _ => ""
+            };
+            return $"📎 Uploaded{ext} file";
+        }
+        return source.Length > 80 ? source[..80] + "…" : source;
     }
 }
