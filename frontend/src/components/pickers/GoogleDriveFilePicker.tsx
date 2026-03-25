@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 interface GoogleDriveFilePickerProps {
   accept?: string;
@@ -212,11 +212,6 @@ export default function GoogleDriveFilePicker({ accept, onChange, onFileName }: 
       setLoading(false);
     }
   }, [accept, onChange, onFileName, ensureScripts]);
-
-  // Cleanup: nothing needed since Picker manages its own dialog
-  useEffect(() => {
-    return () => { /* no-op */ };
-  }, []);
 
   if (!GOOGLE_CLIENT_ID || !GOOGLE_API_KEY) {
     return (

@@ -26,12 +26,6 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
   const [error, setError] = useState<string | null>(null);
   const popupRef = useRef<Window | null>(null);
 
-  // Map accept string (e.g. ".xlsx,.csv,.json") to OneDrive filter extensions
-  const fileExtensions = accept
-    ?.split(",")
-    .map((e) => e.trim().replace(/^\./, ""))
-    .filter(Boolean);
-
   const handlePick = useCallback(async () => {
     if (!CLIENT_ID) {
       setError("OneDrive not configured");
@@ -40,6 +34,12 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
 
     setLoading(true);
     setError(null);
+
+    // Compute extensions inside callback so the dep array uses the stable `accept` prop
+    const fileExtensions = accept
+      ?.split(",")
+      .map((e) => e.trim().replace(/^\./, ""))
+      .filter(Boolean);
 
     try {
       // Open the OneDrive picker in a popup window.
@@ -67,18 +67,21 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
 
       // Listen for the OAuth redirect with the access token
       const accessToken = await new Promise<string>((resolve, reject) => {
+        let settled = false;
         const interval = setInterval(() => {
           if (popup.closed) {
             clearInterval(interval);
-            reject(new Error("Authentication cancelled"));
+            if (!settled) { settled = true; reject(new Error("Authentication cancelled")); }
           }
           try {
             const hash = popup.location.hash;
             if (hash && hash.includes("access_token")) {
               clearInterval(interval);
+              clearTimeout(timer);
               const params = new URLSearchParams(hash.substring(1));
               const token = params.get("access_token");
               popup.close();
+              settled = true;
               if (token) resolve(token);
               else reject(new Error("No access token received"));
             }
@@ -88,10 +91,10 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
         }, 200);
 
         // Timeout after 2 minutes
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           clearInterval(interval);
           popup.close();
-          reject(new Error("Authentication timed out"));
+          if (!settled) { settled = true; reject(new Error("Authentication timed out")); }
         }, 120_000);
       });
 
@@ -165,7 +168,7 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
       setLoading(false);
       popupRef.current = null;
     }
-  }, [onChange, onFileName, fileExtensions]);
+  }, [accept, onChange, onFileName]);
 
   // Cleanup popup on unmount
   useEffect(() => {
