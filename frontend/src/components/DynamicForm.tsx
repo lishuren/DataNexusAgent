@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import type { UiField } from "@/types/api";
+import { toCompressedDataUrl } from "@/utils/compressFile";
 
 const OneDriveFilePicker = lazy(() => import("./pickers/OneDriveFilePicker"));
 const GoogleDriveFilePicker = lazy(() => import("./pickers/GoogleDriveFilePicker"));
@@ -13,11 +14,10 @@ interface DynamicFormProps {
 export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
   const [fileNames, setFileNames] = useState<Record<string, string>>({});
 
-  const handleFile = (key: string, file: File) => {
+  const handleFile = async (key: string, file: File) => {
     setFileNames((prev) => ({ ...prev, [key]: file.name }));
-    const reader = new FileReader();
-    reader.onload = () => onChange(key, reader.result as string);
-    reader.readAsDataURL(file);
+    const dataUrl = await toCompressedDataUrl(file, file.name);
+    onChange(key, dataUrl);
   };
 
   return (

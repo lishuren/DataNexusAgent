@@ -147,6 +147,7 @@ graph TB
 - **Plugins**: C# classes that perform real I/O before or after the LLM call. Registered per-agent
   via the `Plugins` comma-separated field. Two built-in plugins:
   - `InputProcessor` — runs **before** the LLM: parses Excel / CSV / JSON, downloads URLs.
+    Transparently decompresses gzip-compressed data URLs (see **File Compression** below).
   - `OutputIntegrator` — runs **after** the LLM: executes API calls, database writes, validates schemas.
 
 #### Skills vs Plugins
@@ -163,6 +164,21 @@ Execution flow per LLM agent:
 ```
 InputProcessor plugin (optional) → LLM (with skill-enriched prompt) → OutputIntegrator plugin (optional)
 ```
+
+#### File Compression
+
+All file inputs (local upload, OneDrive, Google Drive) are **gzip-compressed** in the browser
+before base64-encoding, using the native `CompressionStream` API. This reduces payload size
+for text-heavy formats (CSV, JSON, plain text) by 70–85%. Already-compressed formats (`.xlsx`,
+`.zip`, `.pdf`, images) are skipped automatically.
+
+**Data URL format** (compressed): `data:application/gzip;x-original-type={originalMime};base64,...`
+
+The backend `InputProcessorPlugin.DecompressIfGzipped()` detects this format, decompresses via
+`GZipStream`, and reconstructs a standard `data:{originalMime};base64,...` URL before type
+detection proceeds as normal. This is fully transparent to skill/agent authors.
+
+The shared utility lives in `frontend/src/utils/compressFile.ts` (`toCompressedDataUrl`).
 
 **Skills cannot invoke plugins.** This is an intentional security boundary. Skills are user-authored
 untrusted text; plugins perform privileged side effects. Allowing skills to trigger plugins would be
@@ -298,6 +314,7 @@ DataNexus/                          ← monorepo root
 │       ├── types/                  ← TypeScript interfaces mirroring backend DTOs
 │       ├── hooks/                  ← useAgents, usePipelines, useSkills
 │       ├── pages/                  ← ProcessPage, AgentsPage, SkillsPage, MarketplacePage
+│       ├── utils/                  ← compressFile.ts (gzip compression utility)
 │       └── styles/
 └── DataNexus.sln                   ← solution file referencing backend/DataNexus.csproj
 ```

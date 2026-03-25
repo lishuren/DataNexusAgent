@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { toCompressedDataUrl } from "@/utils/compressFile";
 
 interface GoogleDriveFilePickerProps {
   accept?: string;
@@ -29,16 +30,6 @@ function loadScript(src: string): Promise<void> {
     s.onload = () => resolve();
     s.onerror = () => reject(new Error(`Failed to load: ${src}`));
     document.head.appendChild(s);
-  });
-}
-
-/** Convert a Blob to a data URL using FileReader. */
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
   });
 }
 
@@ -198,8 +189,8 @@ export default function GoogleDriveFilePicker({ accept, onChange, onFileName }: 
 
       const blob = await downloadResponse.blob();
 
-      // Step 4: Convert to base64 data URL — identical to local file upload
-      const dataUrl = await blobToDataUrl(blob);
+      // Step 4: Compress & convert to base64 data URL — identical to local file upload
+      const dataUrl = await toCompressedDataUrl(blob, selectedFile.name);
 
       onFileName?.(selectedFile.name);
       onChange(dataUrl);

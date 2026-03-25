@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toCompressedDataUrl } from "@/utils/compressFile";
 
 interface OneDriveFilePickerProps {
   accept?: string;
@@ -10,16 +11,6 @@ const CLIENT_ID = import.meta.env.VITE_ONEDRIVE_CLIENT_ID as string | undefined;
 
 // OneDrive File Picker v8 uses a popup window that communicates via postMessage.
 // See: https://learn.microsoft.com/en-us/onedrive/developer/controls/file-pickers/js-v72/open-file
-
-/** Convert a Blob to a data URL. */
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
 
 export default function OneDriveFilePicker({ accept, onChange, onFileName }: OneDriveFilePickerProps) {
   const [loading, setLoading] = useState(false);
@@ -158,7 +149,7 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
       if (!fileResponse.ok) throw new Error("Failed to download file from OneDrive");
 
       const blob = await fileResponse.blob();
-      const dataUrl = await blobToDataUrl(blob);
+      const dataUrl = await toCompressedDataUrl(blob, selected.name);
 
       onFileName?.(selected.name);
       onChange(dataUrl);

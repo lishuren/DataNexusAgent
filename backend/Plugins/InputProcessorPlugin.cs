@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using ClosedXML.Excel;
@@ -17,17 +18,20 @@ public sealed class InputProcessorPlugin(
 
         try
         {
+            // Decompress gzip data URLs from the frontend before any further processing.
+            var inputData = DecompressIfGzipped(context.InputData);
+
             var inputType = context.Metadata?.GetValueOrDefault("InputType", "auto") ?? "auto";
 
             if (inputType == "auto")
-                inputType = DetectInputType(context.InputData);
+                inputType = DetectInputType(inputData);
 
             var parsedData = inputType switch
             {
-                "excel" => await ParseExcelAsync(context.InputData, ct),
-                "json" => ParseJson(context.InputData),
-                "csv" => ParseCsv(context.InputData),
-                "text" => ParseText(context.InputData),
+                "excel" => await ParseExcelAsync(inputData, ct),
+                "json" => ParseJson(inputData),
+                "csv" => ParseCsv(inputData),
+                "text" => ParseText(inputData),
                 _ => throw new NotSupportedException($"Unsupported input type: {inputType}")
             };
 
@@ -42,6 +46,45 @@ public sealed class InputProcessorPlugin(
             logger.LogError(ex, "[User: {UserId}] InputProcessor — failed", context.UserId);
             return new PluginResult(false, string.Empty, "PARSE_ERROR", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Detects gzip-compressed data URLs from the frontend and decompresses them back to a
+    /// standard data URL with the original MIME type.
+    /// Format: <c>data:application/gzip;x-original-type={mime};base64,{gzipped}</c>
+    /// </summary>
+    private string DecompressIfGzipped(string input)
+    {
+        const string gzipPrefix = "data:application/gzip;x-original-type=";
+        if (!input.StartsWith(gzipPrefix, StringComparison.OrdinalIgnoreCase))
+            return input;
+
+        // Parse: data:application/gzip;x-original-type={encodedMime};base64,{data}
+        var afterPrefix = input.AsSpan(gzipPrefix.Length);
+        var semicolonIdx = afterPrefix.IndexOf(';');
+        if (semicolonIdx < 0)
+            return input;
+
+        var originalMimeEncoded = afterPrefix[..semicolonIdx].ToString();
+        var originalMime = Uri.UnescapeDataString(originalMimeEncoded);
+
+        var commaIdx = input.IndexOf(',', gzipPrefix.Length);
+        if (commaIdx < 0)
+            return input;
+
+        var gzippedBytes = Convert.FromBase64String(input[(commaIdx + 1)..]);
+
+        using var gzipStream = new GZipStream(new MemoryStream(gzippedBytes), CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        gzipStream.CopyTo(output);
+        var decompressedBytes = output.ToArray();
+
+        logger.LogInformation(
+            "Decompressed gzip payload: {CompressedSize} → {OriginalSize} bytes (original MIME: {Mime})",
+            gzippedBytes.Length, decompressedBytes.Length, originalMime);
+
+        // Reconstruct as a standard data URL with the original MIME type
+        return $"data:{originalMime};base64,{Convert.ToBase64String(decompressedBytes)}";
     }
 
     private async Task<string> ParseExcelAsync(string source, CancellationToken ct)
