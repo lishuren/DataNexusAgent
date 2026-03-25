@@ -120,13 +120,33 @@ Go to **Process** page (`http://localhost:5173`).
 1. In the agent selector dropdown, choose **Invoice Parser (OneDrive)**.
 2. The form will show three fields:
    - **Upload Invoice Excel** — local file drop zone
-   - **Or Pick from OneDrive** — cloud picker button
+   - **Or Pick from OneDrive** — cloud picker with two options:
+     - **Browse OneDrive files** — lists your most recent files
+     - **or paste a sharing link** — paste any OneDrive/SharePoint URL directly
    - **Output Format** — leave as `JSON`
-3. Click the **Pick from OneDrive** button.
-4. A popup window opens for Microsoft sign-in.
-5. After authentication, your OneDrive root files are listed — select the invoice Excel file.
-6. The file downloads in the browser, gets gzip-compressed, and converts to a data URL automatically.
-7. Click **Process**.
+
+### Option A: Browse your OneDrive files
+
+1. Click **Browse OneDrive files**.
+2. A popup window opens for Microsoft sign-in (first use only — subsequent uses are silent).
+3. Your most recent OneDrive root files are listed — enter the number to select.
+4. The file downloads, gets compressed, and is ready to process.
+
+### Option B: Paste a SharePoint sharing link
+
+1. Copy a sharing URL from SharePoint or OneDrive, for example:
+   ```
+   https://contoso-my.sharepoint.com/:x:/g/personal/user_contoso_com/ABC123?e=xyz
+   ```
+2. Paste it into the **"or paste a sharing link"** input box.
+3. Press **Enter** or click **Load**.
+4. MSAL authenticates (popup on first use, silent thereafter), then the Graph `shares` API
+   resolves the link to the actual file and downloads it.
+5. Click **Process**.
+
+> **Requirements for the sharing URL:**
+> - The signed-in Microsoft account must have at least read access to the file, **or**
+> - The link must be an "Anyone with the link" share (no sign-in required)
 
 ### What Happens Behind the Scenes
 
