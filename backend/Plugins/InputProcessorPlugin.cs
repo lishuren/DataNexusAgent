@@ -183,12 +183,34 @@ public sealed class InputProcessorPlugin(
 
     private static string ParseJson(string input)
     {
+        // Decode base64 data URL to raw JSON text
+        if (input.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var commaIdx = input.IndexOf(',');
+            if (commaIdx >= 0)
+            {
+                var bytes = Convert.FromBase64String(input[(commaIdx + 1)..]);
+                input = Encoding.UTF8.GetString(bytes);
+            }
+        }
+
         using var doc = JsonDocument.Parse(input);
         return JsonSerializer.Serialize(doc.RootElement, JsonSerializerOptions.Web);
     }
 
     private static string ParseCsv(string input)
     {
+        // Decode base64 data URL to raw CSV text
+        if (input.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var commaIdx = input.IndexOf(',');
+            if (commaIdx >= 0)
+            {
+                var bytes = Convert.FromBase64String(input[(commaIdx + 1)..]);
+                input = Encoding.UTF8.GetString(bytes);
+            }
+        }
+
         var lines = ParseCsvLines(input);
         if (lines.Count == 0) return "[]";
 

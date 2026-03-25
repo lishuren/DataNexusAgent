@@ -43,19 +43,8 @@ function shouldSkipCompression(mimeType: string, fileName?: string): boolean {
 /** Compress a blob using browser-native gzip CompressionStream. */
 async function gzipBlob(blob: Blob): Promise<Blob> {
   const cs = new CompressionStream("gzip");
-  const writer = cs.writable.getWriter();
-  // Pipe in blob bytes
-  writer.write(await blob.arrayBuffer());
-  writer.close();
-  // Collect compressed output
-  const reader = cs.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  return new Blob(chunks);
+  const compressed = blob.stream().pipeThrough(cs);
+  return new Response(compressed).blob();
 }
 
 /** Convert a blob to a base64 data URL. */
@@ -96,11 +85,9 @@ export async function toCompressedDataUrl(blob: Blob, fileName?: string): Promis
     return blobToBase64(blob);
   }
 
-  // Build data URL with original MIME type encoded in the metadata
-  const buffer = await compressed.arrayBuffer();
-  const base64 = btoa(
-    new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ""),
-  );
+  // Reuse blobToBase64 to get a standard data URL, then re-wrap with compression metadata
+  const rawDataUrl = await blobToBase64(compressed);
+  const base64Part = rawDataUrl.substring(rawDataUrl.indexOf(",") + 1);
 
-  return `data:application/gzip;x-original-type=${encodeURIComponent(mimeType)};base64,${base64}`;
+  return `data:application/gzip;x-original-type=${encodeURIComponent(mimeType)};base64,${base64Part}`;
 }
