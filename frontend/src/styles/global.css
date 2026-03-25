@@ -553,6 +553,81 @@ textarea {
   margin: 0;
 }
 
+/* Cloud file picker buttons (OneDrive, Google Drive) */
+.cloud-picker-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cloud-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 2px dashed var(--border);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.cloud-picker:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.cloud-picker:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.cloud-picker--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-style: dotted;
+}
+
+.cloud-picker--onedrive:hover:not(:disabled) {
+  border-color: #0078d4;
+  color: #0078d4;
+}
+
+.cloud-picker--google:hover:not(:disabled) {
+  border-color: #4285f4;
+  color: #4285f4;
+}
+
+.cloud-picker__icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.cloud-picker__text {
+  flex: 1;
+}
+
+.cloud-picker__error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.cloud-picker-selected {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.cloud-picker-loading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+}
+
 /* Pipeline builder */
 .pipeline {
   display: flex;

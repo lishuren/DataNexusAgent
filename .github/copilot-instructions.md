@@ -188,6 +188,15 @@ is selected on the Process page. The frontend renders these dynamically. Field t
 | `select`   | Dropdown               | `options` (string array)  |
 | `number`   | Numeric input          | `placeholder`             |
 | `toggle`   | Checkbox + label       | `default` (`"true"/"false"`) |
+| `onedrive-file` | OneDrive file picker button (lazy-loaded) | `accept` (e.g. `.xlsx`) |
+| `google-drive-file` | Google Drive file picker button (lazy-loaded) | `accept` (e.g. `.xlsx`) |
+
+Cloud file picker types (`onedrive-file`, `google-drive-file`) are **lazy-loaded** — the picker SDK
+code is only fetched when an agent using that field type is selected. The picker opens a provider
+auth popup, the user selects a file, and the frontend downloads it and converts to a base64 data URL
+(identical to a local file upload). **No backend changes needed.** Cloud pickers require env vars
+(`VITE_ONEDRIVE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`) — if not set, the
+picker renders as disabled with a "not configured" message.
 
 Example (Data Analyst):
 ```json
@@ -195,6 +204,15 @@ Example (Data Analyst):
   { "key": "file", "label": "Data File", "type": "file", "accept": ".xlsx,.csv,.json", "required": true },
   { "key": "task", "label": "Task Description", "type": "textarea", "placeholder": "Describe the transformation..." },
   { "key": "outputFormat", "label": "Output Format", "type": "select", "options": ["JSON","CSV","SQL"] }
+]
+```
+
+Example (Cloud-enabled agent with OneDrive):
+```json
+[
+  { "key": "file", "label": "Upload File", "type": "file", "accept": ".xlsx,.csv", "required": true },
+  { "key": "cloudFile", "label": "Or Pick from OneDrive", "type": "onedrive-file", "accept": ".xlsx,.csv" },
+  { "key": "task", "label": "Task", "type": "textarea", "placeholder": "What to do with the data..." }
 ]
 ```
 
@@ -275,6 +293,7 @@ DataNexus/                          ← monorepo root
 │       ├── components/             ← AgentCard, AgentSelector, CreateAgentForm, DynamicForm,
 │       │                              ErrorBoundary, Layout, PipelineBuilder, ProcessingPanel,
 │       │                              QuickActions, RecentTasks, ResultBox, SavedPipelines, SkillsPanel
+│       │   └── pickers/            ← OneDriveFilePicker, GoogleDriveFilePicker (lazy-loaded)
 │       ├── services/               ← auth.ts (Keycloak), api.ts (fetch wrapper)
 │       ├── types/                  ← TypeScript interfaces mirroring backend DTOs
 │       ├── hooks/                  ← useAgents, usePipelines, useSkills

@@ -30,7 +30,7 @@ export interface Agent {
 export interface UiField {
   key: string;
   label: string;
-  type: "file" | "text" | "textarea" | "select" | "url" | "number" | "toggle";
+  type: "file" | "text" | "textarea" | "select" | "url" | "number" | "toggle" | "onedrive-file" | "google-drive-file";
   placeholder?: string;
   required?: boolean;
   accept?: string;

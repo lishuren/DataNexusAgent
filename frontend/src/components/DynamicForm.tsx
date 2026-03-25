@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { UiField } from "@/types/api";
+
+const OneDriveFilePicker = lazy(() => import("./pickers/OneDriveFilePicker"));
+const GoogleDriveFilePicker = lazy(() => import("./pickers/GoogleDriveFilePicker"));
 
 interface DynamicFormProps {
   fields: UiField[];
@@ -21,7 +24,7 @@ export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
     <div className="dynamic-form">
       <div className="form-grid">
         {fields.map((f) => {
-          const fullClass = f.type === "textarea" || f.type === "file" ? " full" : "";
+          const fullClass = f.type === "textarea" || f.type === "file" || f.type === "onedrive-file" || f.type === "google-drive-file" ? " full" : "";
           return (
             <div key={f.key} className={`form-field${fullClass}`}>
               <label>
@@ -104,6 +107,40 @@ export function DynamicForm({ fields, values, onChange }: DynamicFormProps) {
                   value={values[f.key] ?? f.default ?? ""}
                   onChange={(e) => onChange(f.key, e.target.value)}
                 />
+              )}
+
+              {f.type === "onedrive-file" && (
+                <div className="cloud-picker-wrapper">
+                  <Suspense fallback={<span className="cloud-picker-loading">Loading OneDrive picker…</span>}>
+                    <OneDriveFilePicker
+                      accept={f.accept}
+                      onChange={(dataUrl) => onChange(f.key, dataUrl)}
+                      onFileName={(name) => setFileNames((prev) => ({ ...prev, [f.key]: name }))}
+                    />
+                  </Suspense>
+                  {fileNames[f.key] && (
+                    <span className="cloud-picker-selected">
+                      <span style={{ color: "var(--primary)" }}>✔</span> {fileNames[f.key]}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {f.type === "google-drive-file" && (
+                <div className="cloud-picker-wrapper">
+                  <Suspense fallback={<span className="cloud-picker-loading">Loading Google Drive picker…</span>}>
+                    <GoogleDriveFilePicker
+                      accept={f.accept}
+                      onChange={(dataUrl) => onChange(f.key, dataUrl)}
+                      onFileName={(name) => setFileNames((prev) => ({ ...prev, [f.key]: name }))}
+                    />
+                  </Suspense>
+                  {fileNames[f.key] && (
+                    <span className="cloud-picker-selected">
+                      <span style={{ color: "var(--primary)" }}>✔</span> {fileNames[f.key]}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           );

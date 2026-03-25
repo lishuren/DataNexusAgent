@@ -155,6 +155,20 @@
     .dynamic-form .file-drop:hover { border-color: var(--primary); color: var(--primary); }
     .dynamic-form .toggle-row { display: flex; align-items: center; gap: 0.5rem; }
     .dynamic-form .toggle-row input[type="checkbox"] { width: auto; margin: 0; }
+    /* Cloud file picker buttons */
+    .cloud-picker-wrapper { display: flex; flex-direction: column; gap: 0.5rem; }
+    .cloud-picker {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem;
+      border: 2px dashed var(--border); border-radius: 0.5rem; background: transparent;
+      color: var(--text-muted); font-size: 0.85rem; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+      width: 100%; text-align: left; font-family: inherit;
+    }
+    .cloud-picker:hover { border-color: var(--primary); color: var(--primary); }
+    .cloud-picker--onedrive:hover { border-color: #0078d4; color: #0078d4; }
+    .cloud-picker--google:hover { border-color: #4285f4; color: #4285f4; }
+    .cloud-picker--disabled { opacity: 0.4; cursor: not-allowed; border-style: dotted; }
+    .cloud-picker__icon { font-size: 1.1rem; flex-shrink: 0; }
+    .cloud-picker__text { flex: 1; }
 
     /* Pipeline builder */
     .pipeline { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 1rem 0; }
@@ -762,7 +776,7 @@ Duration: 3.2s
       let html = '<div class="form-grid">';
 
       for (const f of fields) {
-        const fullClass = (f.type === 'textarea' || f.type === 'file') ? ' full' : '';
+        const fullClass = (f.type === 'textarea' || f.type === 'file' || f.type === 'onedrive-file' || f.type === 'google-drive-file') ? ' full' : '';
         html += '<div class="form-field' + fullClass + '">';
         html += '<label>' + f.label + (f.required ? ' <span style="color:var(--danger)">*</span>' : '') + '</label>';
 
@@ -771,6 +785,18 @@ Duration: 3.2s
             + '📁 ' + (f.placeholder || 'Drop file here or click to browse')
             + '<input type="file" accept="' + (f.accept || '') + '" style="display:none" />'
             + '</div>';
+        } else if (f.type === 'onedrive-file') {
+          html += '<div class="cloud-picker-wrapper">'
+            + '<button type="button" class="cloud-picker cloud-picker--onedrive" onclick="alert(\'OneDrive picker would open here\')">'
+            + '<span class="cloud-picker__icon">📂</span>'
+            + '<span class="cloud-picker__text">Pick from OneDrive</span>'
+            + '</button></div>';
+        } else if (f.type === 'google-drive-file') {
+          html += '<div class="cloud-picker-wrapper">'
+            + '<button type="button" class="cloud-picker cloud-picker--google" onclick="alert(\'Google Drive picker would open here\')">'
+            + '<span class="cloud-picker__icon">📂</span>'
+            + '<span class="cloud-picker__text">Pick from Google Drive</span>'
+            + '</button></div>';
         } else if (f.type === 'textarea') {
           html += '<textarea placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '">'
             + (f.default || '') + '</textarea>';
@@ -1134,13 +1160,25 @@ Duration: 3.2s
 
       html += '<div class="form-grid">';
       for (const f of schema.fields) {
-        const fullClass = (f.type === 'textarea' || f.type === 'file') ? ' full' : '';
+        const fullClass = (f.type === 'textarea' || f.type === 'file' || f.type === 'onedrive-file' || f.type === 'google-drive-file') ? ' full' : '';
         html += '<div class="form-field' + fullClass + '">';
         html += '<label>' + f.label + (f.required ? ' <span style="color:var(--danger)">*</span>' : '') + '</label>';
         if (f.type === 'file') {
           html += '<div class="file-drop" onclick="this.querySelector(\'input\').click()">'
             + '📁 ' + (f.placeholder || 'Drop file here or click to browse')
             + '<input type="file" accept="' + (f.accept || '') + '" style="display:none" /></div>';
+        } else if (f.type === 'onedrive-file') {
+          html += '<div class="cloud-picker-wrapper">'
+            + '<button type="button" class="cloud-picker cloud-picker--onedrive" onclick="alert(\'OneDrive picker would open here\')">'
+            + '<span class="cloud-picker__icon">📂</span>'
+            + '<span class="cloud-picker__text">Pick from OneDrive</span>'
+            + '</button></div>';
+        } else if (f.type === 'google-drive-file') {
+          html += '<div class="cloud-picker-wrapper">'
+            + '<button type="button" class="cloud-picker cloud-picker--google" onclick="alert(\'Google Drive picker would open here\')">'
+            + '<span class="cloud-picker__icon">📂</span>'
+            + '<span class="cloud-picker__text">Pick from Google Drive</span>'
+            + '</button></div>';
         } else if (f.type === 'textarea') {
           html += '<textarea placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '"></textarea>';
         } else if (f.type === 'select') {
