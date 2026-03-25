@@ -21,11 +21,17 @@ If you haven't already, register an app in Azure AD:
    - **Supported account types:** Accounts in any organizational directory and personal Microsoft accounts
    - **Redirect URI:** Select **Single-page application (SPA)** and enter:
      ```
-     http://localhost:5173/onedrive-picker-redirect.html
+     http://localhost:5173
      ```
+     (MSAL handles auth internally — no separate redirect page needed)
 4. After creation, copy the **Application (client) ID**
-5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.Read.All`
+5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.Read`
 6. Click **Grant admin consent** (or have an admin do this)
+
+> **Why `Files.Read` and not `Files.Read.All`?** `Files.Read` lets a user read their own files
+> (user-consentable, no admin approval in most tenants). `Files.Read.All` lets the app read
+> *other users'* files and typically requires admin consent. For this use case, `Files.Read` is
+> the correct minimum-privilege scope.
 
 ---
 
@@ -128,7 +134,9 @@ Go to **Process** page (`http://localhost:5173`).
 ┌──────────────────────────────────────────────────────────────┐
 │  1. You click "Pick from OneDrive"                           │
 │                                                              │
-│  2. OAuth popup → Microsoft sign-in → access token returned  │
+│  2. MSAL.js opens an OAuth 2.0 popup (Auth Code + PKCE)      │
+│     Microsoft sign-in → access token returned securely       │
+│     On repeat use: token is refreshed silently (no popup)    │
 │                                                              │
 │  3. Microsoft Graph API lists your OneDrive root files       │
 │     (filtered to .xlsx/.xls by the accept prop)              │
@@ -199,7 +207,8 @@ See `frontend/.env.example` for setup instructions.
 |---------|-------------|----------------|
 | **UiSchema `onedrive-file`** | Renders a OneDrive picker button (lazy-loaded) | Agent's UI Schema JSON |
 | **UiSchema `google-drive-file`** | Renders a Google Drive picker button (lazy-loaded) | Agent's UI Schema JSON |
-| **`VITE_ONEDRIVE_CLIENT_ID`** | Azure AD app client ID for OAuth | `frontend/.env` |
+| **`VITE_ONEDRIVE_CLIENT_ID`** | Azure AD app client ID for MSAL OAuth | `frontend/.env` |
+| **MSAL.js** | Auth Code + PKCE flow — tokens never exposed in URL | `@azure/msal-browser` package |
 | **Compression** | Files are gzip-compressed in-browser before base64 | Automatic — transparent to agents/skills |
 | **Backend** | No changes needed — cloud files arrive as data URLs | Same as local upload |
 
