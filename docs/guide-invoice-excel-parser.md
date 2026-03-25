@@ -128,16 +128,16 @@ If a field cannot be found, set it to null.
 ```json
 [
   {
-    "type": "file",
-    "name": "inputFile",
+    "key": "file",
     "label": "Upload Invoice Excel",
+    "type": "file",
     "accept": ".xlsx,.xls",
     "required": true
   },
   {
-    "type": "select",
-    "name": "outputFormat",
+    "key": "outputFormat",
     "label": "Output Format",
+    "type": "select",
     "options": ["JSON"]
   }
 ]
