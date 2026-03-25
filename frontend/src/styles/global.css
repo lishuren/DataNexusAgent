@@ -628,6 +628,85 @@ textarea {
   padding: 0.5rem 0;
 }
 
+/* OneDrive sharing URL paste section */
+.onedrive-picker-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.onedrive-url-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.onedrive-url-divider {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  position: relative;
+}
+
+.onedrive-url-divider::before,
+.onedrive-url-divider::after {
+  content: "";
+  display: inline-block;
+  width: 2rem;
+  height: 1px;
+  background: var(--border);
+  vertical-align: middle;
+  margin: 0 0.4rem;
+}
+
+.onedrive-url-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.onedrive-url-input {
+  flex: 1;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.onedrive-url-input:focus {
+  outline: none;
+  border-color: #0078d4;
+}
+
+.onedrive-url-input:disabled {
+  opacity: 0.5;
+}
+
+.onedrive-url-btn {
+  padding: 0.45rem 0.85rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: #0078d4;
+  color: #fff;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.onedrive-url-btn:hover:not(:disabled) {
+  background: #106ebe;
+}
+
+.onedrive-url-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Pipeline builder */
 .pipeline {
   display: flex;

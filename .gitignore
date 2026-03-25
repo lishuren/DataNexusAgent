@@ -38,3 +38,4 @@ backend/appsettings.json
 .logs/
 backend/datanexus.db-shm
 backend/datanexus.db-wal
+frontend/.env
