@@ -171,6 +171,9 @@ configuration field, evaluated by the engine — never by skill content.
 
 - **Database**: PostgreSQL via `Npgsql.EntityFrameworkCore.PostgreSQL`. Connection string in
   `ConnectionStrings:DataNexus`. Auto-migrated on startup.
+- **Compression**: Response compression (Brotli + Gzip) compresses all API responses. Request
+  decompression accepts gzip-compressed request bodies from the frontend. The frontend auto-compresses
+  request bodies larger than 1 KB using the browser's `CompressionStream` API with `Content-Encoding: gzip`.
 - **Inference**: `IChatClient` from `Microsoft.Extensions.AI` via `OpenAI` SDK → GitHub Models (gpt-4o).
   All LLM agents are `ChatClientAgent` instances from Microsoft Agent Framework, backed by this `IChatClient`.
 

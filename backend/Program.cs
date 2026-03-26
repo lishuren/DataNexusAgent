@@ -1,9 +1,11 @@
+using System.IO.Compression;
 using DataNexus.Agents;
 using DataNexus.Core;
 using DataNexus.Endpoints;
 using DataNexus.Identity;
 using DataNexus.Plugins;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.IdentityModel.Tokens;
@@ -135,6 +137,23 @@ builder.Services.AddScoped<AgentFactory>();
 builder.Services.AddScoped<DataNexusEngine>();
 builder.Services.AddScoped<IAgentExecutionRuntime>(sp => sp.GetRequiredService<DataNexusEngine>());
 
+// ---------------------------------------------------------------------------
+// Compression — Brotli + Gzip for responses, Gzip/Brotli/Deflate for requests
+// ---------------------------------------------------------------------------
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+        ["application/json", "text/plain", "text/html"]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
+builder.Services.AddRequestDecompression();
+
 var app = builder.Build();
 
 // ---------------------------------------------------------------------------
@@ -156,6 +175,9 @@ await agentRegistry.InitializeAsync();
 // ---------------------------------------------------------------------------
 // Middleware pipeline
 // ---------------------------------------------------------------------------
+app.UseResponseCompression();
+app.UseRequestDecompression();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<KeycloakMiddleware>();

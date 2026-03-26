@@ -3,13 +3,44 @@ import type { Agent, Pipeline, PipelineRequest, ProcessingRequest, ProcessingRes
 
 const BASE_URL = "/api";
 
+/**
+ * Gzip-compress a string body using the browser's CompressionStream API.
+ * Falls back to uncompressed if CompressionStream is unavailable.
+ */
+async function gzipBody(body: string): Promise<{ data: BodyInit; encoding: string } | null> {
+  if (typeof CompressionStream === "undefined") return null;
+  const blob = new Blob([body]);
+  const cs = new CompressionStream("gzip");
+  const stream = blob.stream().pipeThrough(cs);
+  const compressed = await new Response(stream).blob();
+  // Only compress if it actually saves bytes
+  if (compressed.size >= body.length) return null;
+  return { data: compressed, encoding: "gzip" };
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  let body = init?.body;
+
+  // Compress request bodies larger than 1 KB
+  if (typeof body === "string" && body.length > 1024) {
+    const result = await gzipBody(body);
+    if (result) {
+      body = result.data;
+      headers["Content-Encoding"] = result.encoding;
+    }
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
+    body,
     headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers,
       ...init?.headers,
     },
   });
