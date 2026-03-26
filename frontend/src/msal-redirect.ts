@@ -14,7 +14,7 @@
  */
 
 const CLIENT_ID = import.meta.env.VITE_ONEDRIVE_CLIENT_ID as string | undefined;
-const GRAPH_SCOPES = ["Files.Read", "Files.Read.All"];
+const GRAPH_SCOPES = ["Files.Read"];
 
 const statusEl = document.getElementById("status");
 
