@@ -6,7 +6,7 @@ instead of uploading from their local machine.
 
 **Prerequisites:**
 - You have the `InvoiceExcelExtractor` skill already created (see the base guide)
-- A Microsoft Azure AD app registration with `Files.ReadWrite` delegated permission
+- A Microsoft Azure AD app registration with `Files.Read.All` delegated permission (requires admin consent — see Step 1)
 
 ---
 
@@ -26,13 +26,20 @@ If you haven't already, register an app in Azure AD:
      (This is a dedicated lightweight page that only handles MSAL auth — it does not
      load the full app, so corporate SSO flows complete cleanly in the popup.)
 4. After creation, copy the **Application (client) ID**
-5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.ReadWrite`
-6. User consent is sufficient — no admin approval needed for `Files.ReadWrite`
+5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.Read.All`
+6. Click **Grant admin consent** — `Files.Read.All` requires admin approval (see note below)
 
-> **Why `Files.ReadWrite`?** The Graph shares API (`/v1.0/shares/...`) requires at least
-> `Files.ReadWrite` for delegated access. `Files.Read` is insufficient for shared/external
-> files. `Files.Read.All` would work but requires admin consent in most tenants.
-> `Files.ReadWrite` is user-consentable and covers both owned and shared files.
+> **Permission scope findings (tested against activenetwork.com tenant):**
+>
+> | Scope | Admin consent required | Graph shares API (`/v1.0/shares/...`) |
+> |---|---|---|
+> | `Files.Read` | **No** — user can consent directly | **403 Forbidden** — insufficient for shared files |
+> | `Files.Read.All` | **Yes** — tenant blocks self-consent (shows "Approval required") | ✅ Works |
+>
+> **Conclusion:** `Files.Read.All` is the correct scope for the shares API to work. However,
+> corporate tenants (e.g., Active Network) require an Azure AD admin to grant consent for it.
+> Use the **"Request approval"** button on the consent screen and provide a justification,
+> or ask your IT admin to grant admin consent via the Azure Portal.
 
 ---
 
