@@ -21,9 +21,10 @@ If you haven't already, register an app in Azure AD:
    - **Supported account types:** Accounts in any organizational directory and personal Microsoft accounts
    - **Redirect URI:** Select **Single-page application (SPA)** and enter:
      ```
-     http://localhost:5173
+     http://localhost:5173/msal-redirect.html
      ```
-     (MSAL handles auth internally — no separate redirect page needed)
+     (This is a dedicated lightweight page that only handles MSAL auth — it does not
+     load the full app, so corporate SSO flows complete cleanly in the popup.)
 4. After creation, copy the **Application (client) ID**
 5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.Read`
 6. Click **Grant admin consent** (or have an admin do this)

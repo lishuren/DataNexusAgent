@@ -9,6 +9,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        "msal-redirect": path.resolve(__dirname, "msal-redirect.html"),
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {
