@@ -15,7 +15,7 @@ interface OneDriveFilePickerProps {
 
 const CLIENT_ID = import.meta.env.VITE_ONEDRIVE_CLIENT_ID as string | undefined;
 
-const GRAPH_SCOPES = ["Files.Read"];
+const GRAPH_SCOPES = ["Files.Read.All"];
 
 /** Lazily create and initialise a single MSAL instance per client ID. */
 let msalInstance: IPublicClientApplication | null = null;
