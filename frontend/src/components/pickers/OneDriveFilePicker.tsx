@@ -61,9 +61,20 @@ async function acquireToken(msal: IPublicClientApplication): Promise<string> {
   return result.accessToken;
 }
 
+/**
+ * Encode a OneDrive/SharePoint sharing URL for the Graph shares API.
+ * Format: "u!" + base64url(url) (no padding, + → -, / → _)
+ */
+function encodeSharingUrl(url: string): string {
+  const b64 = btoa(url).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  return `u!${b64}`;
+}
+
 export default function OneDriveFilePicker({ accept, onChange, onFileName }: OneDriveFilePickerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlLoading, setUrlLoading] = useState(false);
   // Track in-flight popup so we don't open two
   const pickingRef = useRef(false);
 
@@ -150,6 +161,60 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
     }
   }, [accept, onChange, onFileName]);
 
+  /** Resolve a OneDrive/SharePoint sharing URL via the Graph shares API. */
+  const handleUrlResolve = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url || urlLoading) return;
+
+    setUrlLoading(true);
+    setError(null);
+
+    try {
+      const encoded = encodeSharingUrl(url);
+      const sharesUrl = `https://graph.microsoft.com/v1.0/shares/${encoded}/driveItem`;
+
+      // First attempt: unauthenticated (works for "Anyone with the link" shares — no popup).
+      let metaResponse = await fetch(sharesUrl);
+
+      // If auth is required, acquire a token silently (or popup on first use) and retry.
+      if (metaResponse.status === 401 || metaResponse.status === 403) {
+        const msal = await getMsalInstance();
+        const accessToken = await acquireToken(msal);
+        metaResponse = await fetch(sharesUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      }
+
+      if (!metaResponse.ok) {
+        throw new Error(
+          metaResponse.status === 403
+            ? "Access denied — sign in with an account that has access to this file"
+            : `Could not resolve sharing URL (${metaResponse.status})`,
+        );
+      }
+
+      const driveItem = (await metaResponse.json()) as {
+        name: string;
+        "@microsoft.graph.downloadUrl"?: string;
+      };
+
+      const downloadUrl = driveItem["@microsoft.graph.downloadUrl"];
+      if (!downloadUrl) throw new Error("Could not get download URL from sharing link");
+
+      const fileResponse = await fetch(downloadUrl);
+      if (!fileResponse.ok) throw new Error("Failed to download file from sharing link");
+
+      const blob = await fileResponse.blob();
+      const dataUrl = await toCompressedDataUrl(blob, driveItem.name);
+
+      onFileName?.(driveItem.name);
+      onChange(dataUrl);
+      setUrlInput("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUrlLoading(false);
+    }
+  }, [urlInput, urlLoading, onChange, onFileName]);
+
   if (!CLIENT_ID) {
     return (
       <div className="cloud-picker cloud-picker--disabled">
@@ -160,17 +225,43 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
   }
 
   return (
-    <button
-      type="button"
-      className="cloud-picker cloud-picker--onedrive"
-      onClick={handlePick}
-      disabled={loading}
-    >
-      <span className="cloud-picker__icon">{loading ? "⏳" : "📂"}</span>
-      <span className="cloud-picker__text">
-        {loading ? "Connecting to OneDrive…" : "Pick from OneDrive"}
-      </span>
+    <div className="onedrive-picker-container">
+      <button
+        type="button"
+        className="cloud-picker cloud-picker--onedrive"
+        onClick={handlePick}
+        disabled={loading || urlLoading}
+      >
+        <span className="cloud-picker__icon">{loading ? "⏳" : "📂"}</span>
+        <span className="cloud-picker__text">
+          {loading ? "Connecting to OneDrive…" : "Browse OneDrive files"}
+        </span>
+      </button>
+
+      <div className="onedrive-url-section">
+        <span className="onedrive-url-divider">or paste a sharing link</span>
+        <div className="onedrive-url-row">
+          <input
+            type="url"
+            className="onedrive-url-input"
+            placeholder="https://…sharepoint.com/:x:/g/personal/…"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleUrlResolve(); }}
+            disabled={loading || urlLoading}
+          />
+          <button
+            type="button"
+            className="onedrive-url-btn"
+            onClick={handleUrlResolve}
+            disabled={!urlInput.trim() || loading || urlLoading}
+          >
+            {urlLoading ? "⏳" : "Load"}
+          </button>
+        </div>
+      </div>
+
       {error && <span className="cloud-picker__error">{error}</span>}
-    </button>
+    </div>
   );
 }
