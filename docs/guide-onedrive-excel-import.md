@@ -6,7 +6,7 @@ instead of uploading from their local machine.
 
 **Prerequisites:**
 - You have the `InvoiceExcelExtractor` skill already created (see the base guide)
-- A Microsoft Azure AD app registration with `Files.Read.All` delegated permission
+- A Microsoft Azure AD app registration with `Files.ReadWrite` delegated permission
 
 ---
 
@@ -26,13 +26,13 @@ If you haven't already, register an app in Azure AD:
      (This is a dedicated lightweight page that only handles MSAL auth — it does not
      load the full app, so corporate SSO flows complete cleanly in the popup.)
 4. After creation, copy the **Application (client) ID**
-5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.Read`
-6. Click **Grant admin consent** (or have an admin do this)
+5. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → select `Files.ReadWrite`
+6. User consent is sufficient — no admin approval needed for `Files.ReadWrite`
 
-> **Why `Files.Read` and not `Files.Read.All`?** `Files.Read` lets a user read their own files
-> (user-consentable, no admin approval in most tenants). `Files.Read.All` lets the app read
-> *other users'* files and typically requires admin consent. For this use case, `Files.Read` is
-> the correct minimum-privilege scope.
+> **Why `Files.ReadWrite`?** The Graph shares API (`/v1.0/shares/...`) requires at least
+> `Files.ReadWrite` for delegated access. `Files.Read` is insufficient for shared/external
+> files. `Files.Read.All` would work but requires admin consent in most tenants.
+> `Files.ReadWrite` is user-consentable and covers both owned and shared files.
 
 ---
 
