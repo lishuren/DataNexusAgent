@@ -15,7 +15,7 @@ interface OneDriveFilePickerProps {
 
 const CLIENT_ID = import.meta.env.VITE_ONEDRIVE_CLIENT_ID as string | undefined;
 
-const GRAPH_SCOPES = ["Files.Read"];
+const GRAPH_SCOPES = ["Files.Read.All"];
 
 /** Lazily create and initialise a single MSAL instance per client ID. */
 let msalInstance: IPublicClientApplication | null = null;
@@ -50,10 +50,15 @@ function acquireTokenViaRedirect(): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log("[OneDrive] Opening auth window for redirect login...");
     const channel = new BroadcastChannel("datanexus-msal");
+
+    // Center the auth window on screen
+    const w = 520, h = 700;
+    const left = Math.round(window.screenX + (window.outerWidth - w) / 2);
+    const top = Math.round(window.screenY + (window.outerHeight - h) / 2);
     const authWindow = window.open(
       "/msal-redirect.html",
       "datanexus-msal-auth",
-      "width=500,height=700",
+      `width=${w},height=${h},left=${left},top=${top}`,
     );
 
     if (!authWindow) {
@@ -63,32 +68,27 @@ function acquireTokenViaRedirect(): Promise<string> {
     }
 
     const timer = setTimeout(() => {
-      clearInterval(pollClosed);
       channel.close();
       reject(new Error("Authentication timed out — please try again"));
     }, 600000); // 10 minutes
 
-    const pollClosed = setInterval(() => {
-      if (authWindow.closed) {
-        clearInterval(pollClosed);
-        clearTimeout(timer);
-        channel.close();
-        reject(new Error("Authentication window was closed"));
-      }
-    }, 1000);
+    // NOTE: we intentionally do NOT poll authWindow.closed here.
+    // During multi-hop SSO (Microsoft → ADFS → Okta), the window navigates
+    // cross-origin, which causes some browsers to report .closed as true
+    // even though the window is still open. We rely solely on:
+    // - BroadcastChannel for success/error
+    // - Timeout as ultimate fallback
 
     channel.onmessage = (event: MessageEvent) => {
       if (event.data?.type === "token") {
         console.log("[OneDrive] Received token from auth window");
         clearTimeout(timer);
-        clearInterval(pollClosed);
         channel.close();
         try { authWindow.close(); } catch { /* ignore */ }
         resolve(event.data.accessToken as string);
       } else if (event.data?.type === "error") {
         console.error("[OneDrive] Auth window error:", event.data.message);
         clearTimeout(timer);
-        clearInterval(pollClosed);
         channel.close();
         try { authWindow.close(); } catch { /* ignore */ }
         reject(new Error(event.data.message || "Authentication failed"));
