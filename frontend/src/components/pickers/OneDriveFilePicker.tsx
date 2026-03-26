@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import {
   type AccountInfo,
-  BrowserAuthError,
   type IPublicClientApplication,
   InteractionRequiredAuthError,
   PublicClientApplication,
@@ -24,57 +23,101 @@ let msalInstance: IPublicClientApplication | null = null;
 async function getMsalInstance(): Promise<IPublicClientApplication> {
   if (msalInstance) return msalInstance;
 
+  console.log("[OneDrive] Initializing MSAL...");
   const pca = new PublicClientApplication({
     auth: {
       clientId: CLIENT_ID!,
       authority: "https://login.microsoftonline.com/common",
-      // MSAL handles its own redirect internally — no redirect HTML file needed.
-      redirectUri: window.location.origin,
+      redirectUri: `${window.location.origin}/msal-redirect.html`,
     },
-    cache: { cacheLocation: "sessionStorage" },
+    // localStorage so the redirect page and main page share the MSAL cache.
+    // After first login, acquireTokenSilent works without opening any window.
+    cache: { cacheLocation: "localStorage" },
   });
 
   await pca.initialize();
   msalInstance = pca;
+  console.log("[OneDrive] MSAL initialized");
   return pca;
 }
 
-/** Acquire a Graph access token, silently if possible, popup on first use. */
-async function acquireToken(msal: IPublicClientApplication): Promise<string> {
+/**
+ * Open the dedicated auth window and wait for the token via BroadcastChannel.
+ * The auth window uses loginRedirect (not popup), so it survives multi-hop
+ * corporate SSO chains (ADFS, Okta, etc.) that break window.opener.
+ */
+function acquireTokenViaRedirect(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log("[OneDrive] Opening auth window for redirect login...");
+    const channel = new BroadcastChannel("datanexus-msal");
+    const authWindow = window.open(
+      "/msal-redirect.html",
+      "datanexus-msal-auth",
+      "width=500,height=700",
+    );
+
+    if (!authWindow) {
+      channel.close();
+      reject(new Error("Popup blocked — please allow popups for this site"));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      clearInterval(pollClosed);
+      channel.close();
+      reject(new Error("Authentication timed out — please try again"));
+    }, 600000); // 10 minutes
+
+    const pollClosed = setInterval(() => {
+      if (authWindow.closed) {
+        clearInterval(pollClosed);
+        clearTimeout(timer);
+        channel.close();
+        reject(new Error("Authentication window was closed"));
+      }
+    }, 1000);
+
+    channel.onmessage = (event: MessageEvent) => {
+      if (event.data?.type === "token") {
+        console.log("[OneDrive] Received token from auth window");
+        clearTimeout(timer);
+        clearInterval(pollClosed);
+        channel.close();
+        try { authWindow.close(); } catch { /* ignore */ }
+        resolve(event.data.accessToken as string);
+      } else if (event.data?.type === "error") {
+        console.error("[OneDrive] Auth window error:", event.data.message);
+        clearTimeout(timer);
+        clearInterval(pollClosed);
+        channel.close();
+        try { authWindow.close(); } catch { /* ignore */ }
+        reject(new Error(event.data.message || "Authentication failed"));
+      }
+    };
+  });
+}
+
+/** Acquire a Graph access token. Silent first, then redirect window if needed. */
+async function acquireToken(): Promise<string> {
+  const msal = await getMsalInstance();
   const accounts = msal.getAllAccounts();
   const account: AccountInfo | undefined = accounts[0];
+  console.log("[OneDrive] acquireToken — cached accounts:", accounts.length);
 
   if (account) {
     try {
+      console.log("[OneDrive] Trying silent token for:", account.username);
       const result = await msal.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+      console.log("[OneDrive] Silent token OK");
       return result.accessToken;
     } catch (e) {
-      // Silent refresh failed (expired, policy change) — fall through to popup
+      console.warn("[OneDrive] Silent token failed:", e);
       if (!(e instanceof InteractionRequiredAuthError)) throw e;
     }
   }
 
-  try {
-    const result = await msal.loginPopup({
-      scopes: GRAPH_SCOPES,
-      prompt: "select_account",
-    });
-    return result.accessToken;
-  } catch (e) {
-    // If a previous popup was interrupted / left dangling, MSAL keeps a lock.
-    // Clear it and retry once.
-    if (e instanceof BrowserAuthError && e.errorCode === "interaction_in_progress") {
-      // Drop the stale lock from sessionStorage so we can open a fresh popup.
-      const key = `msal.${CLIENT_ID}.interaction.status`;
-      sessionStorage.removeItem(key);
-      const result = await msal.loginPopup({
-        scopes: GRAPH_SCOPES,
-        prompt: "select_account",
-      });
-      return result.accessToken;
-    }
-    throw e;
-  }
+  // No cached account or silent failed — open redirect window
+  return acquireTokenViaRedirect();
 }
 
 /**
@@ -91,7 +134,6 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
   const [error, setError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [urlLoading, setUrlLoading] = useState(false);
-  // Track in-flight popup so we don't open two
   const pickingRef = useRef(false);
 
   const handlePick = useCallback(async () => {
@@ -107,10 +149,8 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
       .filter(Boolean);
 
     try {
-      const msal = await getMsalInstance();
-      const accessToken = await acquireToken(msal);
+      const accessToken = await acquireToken();
 
-      // List files from OneDrive root, most recently modified first
       const listResponse = await fetch(
         "https://graph.microsoft.com/v1.0/me/drive/root/children?" +
           new URLSearchParams({
@@ -134,7 +174,6 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
         }>;
       };
 
-      // Files only (no folders), optionally filtered by extension
       let files = listing.value.filter((item) => item.file);
       if (fileExtensions?.length) {
         files = files.filter((item) =>
@@ -177,7 +216,6 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
     }
   }, [accept, onChange, onFileName]);
 
-  /** Resolve a OneDrive/SharePoint sharing URL via the Graph shares API. */
   const handleUrlResolve = useCallback(async () => {
     const url = urlInput.trim();
     if (!url || urlLoading || pickingRef.current) return;
@@ -190,14 +228,16 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
       const encoded = encodeSharingUrl(url);
       const sharesUrl = `https://graph.microsoft.com/v1.0/shares/${encoded}/driveItem`;
 
-      // First attempt: unauthenticated (works for "Anyone with the link" shares — no popup).
+      console.log("[OneDrive] Trying unauthenticated shares API...");
       let metaResponse = await fetch(sharesUrl);
+      console.log("[OneDrive] Unauthenticated response:", metaResponse.status);
 
-      // If auth is required, acquire a token silently (or popup on first use) and retry.
       if (metaResponse.status === 401 || metaResponse.status === 403) {
-        const msal = await getMsalInstance();
-        const accessToken = await acquireToken(msal);
+        console.log("[OneDrive] Auth required, acquiring token...");
+        const accessToken = await acquireToken();
+        console.log("[OneDrive] Token acquired, retrying with auth...");
         metaResponse = await fetch(sharesUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+        console.log("[OneDrive] Authenticated response:", metaResponse.status);
       }
 
       if (!metaResponse.ok) {
@@ -212,20 +252,25 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
         name: string;
         "@microsoft.graph.downloadUrl"?: string;
       };
+      console.log("[OneDrive] Resolved file:", driveItem.name);
 
       const downloadUrl = driveItem["@microsoft.graph.downloadUrl"];
       if (!downloadUrl) throw new Error("Could not get download URL from sharing link");
 
+      console.log("[OneDrive] Downloading file...");
       const fileResponse = await fetch(downloadUrl);
       if (!fileResponse.ok) throw new Error("Failed to download file from sharing link");
 
       const blob = await fileResponse.blob();
+      console.log("[OneDrive] Downloaded", blob.size, "bytes, compressing...");
       const dataUrl = await toCompressedDataUrl(blob, driveItem.name);
 
       onFileName?.(driveItem.name);
       onChange(dataUrl);
       setUrlInput("");
+      console.log("[OneDrive] File loaded successfully:", driveItem.name);
     } catch (err) {
+      console.error("[OneDrive] URL resolve failed:", err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setUrlLoading(false);

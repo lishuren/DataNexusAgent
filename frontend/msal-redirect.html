@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Signing in...</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: #e0e0e0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 15px;
+      }
+      .card {
+        text-align: center;
+        padding: 40px 48px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 16px;
+        backdrop-filter: blur(12px);
+      }
+      .spinner {
+        width: 40px; height: 40px;
+        margin: 0 auto 20px;
+        border: 3px solid rgba(255,255,255,0.15);
+        border-top-color: #f47c20;
+        border-radius: 50%;
+        animation: spin .8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #status { color: #ccc; }
+      .brand { font-size: 11px; color: #666; margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="spinner"></div>
+      <div id="status">Signing in...</div>
+      <div class="brand">DataNexus</div>
+    </div>
+    <script type="module" src="/src/msal-redirect.ts"></script>
+  </body>
+</html>
