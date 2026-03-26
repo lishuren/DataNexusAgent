@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import {
   type AccountInfo,
+  BrowserAuthError,
   type IPublicClientApplication,
   InteractionRequiredAuthError,
   PublicClientApplication,
@@ -53,12 +54,27 @@ async function acquireToken(msal: IPublicClientApplication): Promise<string> {
     }
   }
 
-  // Auth Code + PKCE popup (modern, non-deprecated flow)
-  const result = await msal.loginPopup({
-    scopes: GRAPH_SCOPES,
-    prompt: "select_account",
-  });
-  return result.accessToken;
+  try {
+    const result = await msal.loginPopup({
+      scopes: GRAPH_SCOPES,
+      prompt: "select_account",
+    });
+    return result.accessToken;
+  } catch (e) {
+    // If a previous popup was interrupted / left dangling, MSAL keeps a lock.
+    // Clear it and retry once.
+    if (e instanceof BrowserAuthError && e.errorCode === "interaction_in_progress") {
+      // Drop the stale lock from sessionStorage so we can open a fresh popup.
+      const key = `msal.${CLIENT_ID}.interaction.status`;
+      sessionStorage.removeItem(key);
+      const result = await msal.loginPopup({
+        scopes: GRAPH_SCOPES,
+        prompt: "select_account",
+      });
+      return result.accessToken;
+    }
+    throw e;
+  }
 }
 
 /**
@@ -164,8 +180,9 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
   /** Resolve a OneDrive/SharePoint sharing URL via the Graph shares API. */
   const handleUrlResolve = useCallback(async () => {
     const url = urlInput.trim();
-    if (!url || urlLoading) return;
+    if (!url || urlLoading || pickingRef.current) return;
 
+    pickingRef.current = true;
     setUrlLoading(true);
     setError(null);
 
@@ -212,6 +229,7 @@ export default function OneDriveFilePicker({ accept, onChange, onFileName }: One
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setUrlLoading(false);
+      pickingRef.current = false;
     }
   }, [urlInput, urlLoading, onChange, onFileName]);
 
