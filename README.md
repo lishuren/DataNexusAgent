@@ -26,10 +26,10 @@ graph TB
     Frontend -->|Bearer token| Backend[ASP.NET Core Minimal API]
     Frontend -->|OIDC| Keycloak[Keycloak]
 
-    Backend --> Process[/api/process]
-    Backend --> Agents[/api/agents]
-    Backend --> Skills[/api/skills]
-    Backend --> Pipelines[/api/pipelines]
+  Backend --> Process["/api/process"]
+  Backend --> Agents["/api/agents"]
+  Backend --> Skills["/api/skills"]
+  Backend --> Pipelines["/api/pipelines"]
 
     Process --> Engine[DataNexusEngine]
     Pipelines --> Engine
