@@ -28,7 +28,6 @@ if (CLIENT_ID) {
         clientId: CLIENT_ID,
         authority: "https://login.microsoftonline.com/common",
         redirectUri: `${window.location.origin}/msal-redirect.html`,
-        navigateToLoginRequestUrl: false,
       },
       cache: { cacheLocation: "localStorage" },
     });
