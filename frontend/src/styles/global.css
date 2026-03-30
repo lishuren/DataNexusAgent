@@ -829,3 +829,64 @@ textarea {
 .agent-picker-item:last-child {
   border-bottom: none;
 }
+
+/* Icon picker */
+.icon-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+
+.icon-picker-trigger:hover {
+  border-color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+}
+
+.icon-picker-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 100;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  width: 220px;
+}
+
+.icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.icon-picker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 1.1rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.icon-picker-cell:hover {
+  background: rgba(var(--primary-rgb), 0.18);
+}
+
+.icon-picker-cell.selected {
+  background: rgba(var(--primary-rgb), 0.32);
+  outline: 2px solid var(--primary);
+}

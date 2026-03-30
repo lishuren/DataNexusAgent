@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createAgent, updateAgent } from "@/services/api";
 import { useSkills } from "@/hooks/useSkills";
 import type { Agent } from "@/types/api";
@@ -10,6 +10,61 @@ interface CreateAgentFormProps {
 }
 
 const KNOWN_PLUGINS = ["InputProcessor", "OutputIntegrator"];
+
+// Curated set of agent-relevant emoji icons
+const ICON_OPTIONS = [
+  "🤖", "🧠", "⚙️", "🔧", "🛠️", "🔩", "📊", "📈", "📉",
+  "📋", "📄", "📝", "📁", "🗂️", "🗃️", "💾", "🖥️", "⌨️",
+  "🌐", "🔌", "📡", "🔍", "🔎", "🧮", "💡", "🔔", "⚡",
+  "🚀", "🎯", "🏗️", "🏭", "🏢", "🏛️", "🏦", "🏪", "🏬",
+  "📧", "📨", "📩", "📬", "📮", "🔐", "🔒", "🔑", "🛡️",
+  "📦", "🗄️", "🖨️", "📃", "📜", "🔗", "✅", "❌", "⚠️",
+  "🧩", "🎛️", "🎚️", "🧰", "🪛", "🪝", "🪜", "🔭", "🧲",
+];
+
+function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="icon-picker-trigger"
+        title="Pick an icon"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="icon-picker-popup">
+          <div className="icon-picker-grid">
+            {ICON_OPTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                className={`icon-picker-cell${emoji === value ? " selected" : ""}`}
+                title={emoji}
+                onClick={() => { onChange(emoji); setOpen(false); }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const normalizeList = (value: string[] | string | null | undefined) => {
   if (!value) return [];
@@ -495,14 +550,9 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
             onChange={(e) => setName(e.target.value)}
           />
         </div>
-        <div style={{ width: 80 }}>
+        <div>
           <label className="form-label">Icon</label>
-          <input
-            style={{ marginBottom: 0 }}
-            placeholder="📧"
-            value={icon}
-            onChange={(e) => setIcon(e.target.value)}
-          />
+          <IconPicker value={icon} onChange={setIcon} />
         </div>
       </div>
 

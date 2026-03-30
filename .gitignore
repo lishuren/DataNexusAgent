@@ -39,3 +39,4 @@ backend/appsettings.json
 backend/datanexus.db-shm
 backend/datanexus.db-wal
 frontend/.env
+backend/datanexus.db
