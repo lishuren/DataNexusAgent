@@ -24,7 +24,7 @@ graph TB
     subgraph "Frontend  (React 19 + Vite)"
         UI["App UI"]
         KC_JS["Keycloak JS"]
-        Pages["Process | Agents | Skills | Marketplace"]
+        Pages["Process | Agents | Skills | Orchestrations | Marketplace"]
     end
 
     subgraph "Auth Provider"
@@ -266,8 +266,8 @@ Example (Cloud-enabled agent with OneDrive):
 
 - **Auth**: `keycloak-js` handles login/token lifecycle; token is passed as Bearer to backend.
 - **Pages**: Process (dynamic agent UI + task execution), Agents (create/publish/compose pipelines),
-  Orchestrations (AI planner + review/edit/approve/run/publish/clone/delete),
-  Skills (manage), Marketplace (browse public agents, skills, + orchestrations).
+  Skills (manage), Orchestrations (AI planner + review/edit/approve/run/publish/clone/delete),
+  Marketplace (browse public agents, skills, + orchestrations).
 - **Dynamic Agent UI**: When a user selects an agent on the Process page, the form fields
   are rendered dynamically from the agent's `uiSchema`. Each agent has its own tailored input form.
 - **API proxy**: Vite dev server proxies `/api` to the backend at `localhost:5000`.
