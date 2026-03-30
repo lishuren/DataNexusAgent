@@ -287,6 +287,17 @@ Example (Cloud-enabled agent with OneDrive):
 - All user-facing actions must be scoped to the authenticated `UserId`.
 - Log with the `[User: {UserId}]` prefix for auditability.
 - SSRF protection: only HTTPS URIs allowed for downloads / API output.
+- **MAF-first rule**: Always prefer Microsoft Agent Framework (MAF) primitives over homebrew
+  implementations. Use `ChatClientAgent`, `AgentWorkflowBuilder.BuildSequential`,
+  `InProcessExecution.RunAsync`, `AsBuilder().Use()` middleware, `AgentResponse`, and `Run`
+  instead of custom orchestration or pipeline code. New agent patterns should be built on MAF
+  types — not bespoke wrappers. When MAF adds primitives for a pattern we currently implement
+  ourselves (e.g., graph workflows, concurrent execution, hosting), migrate to the MAF version.
+- Use `PluginNames` constants (not string literals) when referencing plugin names.
+- Use `PluginError` helpers (not magic `[PLUGIN_ERROR]` strings) for error signaling in AF middleware.
+- **Streaming middleware rule**: In `AsBuilder().Use()` middleware, implement `runStreamingFunc`
+  with a pass-through when middleware only observes (e.g. logging). Pass `null` when middleware
+  transforms messages or overrides execution — MAF will auto-derive streaming via the non-streaming path.
 
 ### TypeScript (Frontend)
 
@@ -323,11 +334,13 @@ DataNexus/                          ← monorepo root
 │   │   ├── ExternalAgentAdapter.cs             — wraps ExternalProcessRunner as AF AIAgent
 │   │   ├── ExternalProcessRunner.cs            — CLI process execution (security boundary)
 │   │   ├── ExternalAgentOptions.cs             — command allowlist / timeout config
+│   │   ├── PluginConstants.cs                  — PluginNames + PluginError helpers (no magic strings)
 │   │   └── IAgentExecutionRuntime.cs           — runtime interface
 │   ├── Core/                       ← AgentEntity, AgentRegistry, OrchestrationEntity, OrchestrationRegistry,
-│   │                                  PipelineEntity, PipelineRegistry, SkillRegistry, SkillDefinition
+│   │                                  PipelineEntity, PipelineRegistry, SkillRegistry, SkillDefinition,
+│   │                                  TaskHistoryEntity, TaskHistoryRegistry
 │   ├── Endpoints/                  ← ProcessingEndpoints, AgentEndpoints, OrchestrationEndpoints,
-│   │                                  PipelineEndpoints, SkillsEndpoints
+│   │                                  PipelineEndpoints, SkillsEndpoints, TaskHistoryEndpoints
 │   ├── Identity/                   ← KeycloakAuthService, KeycloakMiddleware, UserContext
 │   ├── Models/                     ← Request/response records
 │   └── Plugins/                    ← InputProcessorPlugin, OutputIntegratorPlugin
@@ -393,3 +406,37 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
    approval before execution. Users can swap agents, override prompts, and remove steps.
    Approved orchestrations execute via `AgentWorkflowBuilder.BuildSequential` + `InProcessExecution.RunAsync`,
    fully leveraging MAF workflow primitives. Published orchestrations are shareable via the marketplace.
+10. **MAF-first architecture** — all agent construction, middleware, workflow orchestration, and
+    execution must use Microsoft Agent Framework primitives. No homebrew agent runners, custom
+    pipeline loops, or bespoke middleware chains. When MAF ships new capabilities (e.g.,
+    `Microsoft.Agents.AI.Hosting` for DI, graph workflows, concurrent patterns, OpenTelemetry),
+    migrate existing code to those primitives rather than maintaining custom implementations.
+    Well-known constants (`PluginNames`, `PluginError`) replace magic strings throughout the codebase.
+
+### Future MAF Patterns (Adopt When Needed)
+
+The following MAF primitives are available in `Microsoft.Agents.AI.Workflows` 1.0.0-rc4 but not yet
+used in DataNexus. Adopt them as product needs arise rather than pre-building:
+
+- **`AgentWorkflowBuilder.BuildConcurrent(agents)`** — parallel agent execution (fan-out/fan-in).
+  Use when pipeline steps are independent and can run simultaneously.
+- **`AgentWorkflowBuilder.CreateHandoffBuilderWith(triage).WithHandoffs(...).Build()`** — agent
+  handoff patterns where a triage agent routes to specialists. Useful for routing-style orchestrations.
+- **`AgentWorkflowBuilder.CreateGroupChatBuilderWith(manager).AddParticipants(...).Build()`** —
+  multi-agent group chat with configurable turn management (e.g. `RoundRobinGroupChatManager`).
+- **`WorkflowBuilder`** — graph-based workflow construction with `AddEdge()` for arbitrary DAGs,
+  conditional routing, and loops. More flexible than `BuildSequential` for non-linear flows.
+- **`InProcessExecution.RunStreamingAsync()`** — streaming workflow execution returning a
+  `StreamingRun` with `TurnToken`, `WatchStreamAsync()`, `AgentResponseUpdateEvent`, and
+  `WorkflowOutputEvent` for real-time event streaming to clients.
+- **`AgentSkillsProvider` + `AIContextProviders`** — MAF's native progressive-disclosure skill
+  system (SKILL.md files with `load_skill`, `read_skill_resource`, `run_skill_script` tools).
+  Evaluate for replacing the current skill injection approach when MAF's skill model stabilizes.
+- **`UseAIContextProviders()`** — inject dynamic context messages (RAG results, time, user
+  preferences) into agent pipelines without modifying system prompts.
+- **`ChatClientAgentRunOptions`** — per-request agent configuration (temperature, tools, model).
+- **Declarative agents/workflows** — YAML-based agent and workflow definitions via
+  `DeclarativeWorkflowBuilder.Build("workflow.yaml", options)`. Relevant since DataNexus
+  already stores agent definitions in database (similar declarative concept).
+- **`Microsoft.Agents.AI.Hosting`** (preview) — DI hosting helpers, graph-based workflows with
+  streaming/checkpointing/human-in-the-loop, and OpenTelemetry observability.

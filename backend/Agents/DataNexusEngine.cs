@@ -94,7 +94,7 @@ public sealed class DataNexusEngine(
             // Extract the final output from workflow events
             output = ExtractWorkflowOutput(run);
 
-            if (output is not null && !output.StartsWith("[PLUGIN_ERROR]"))
+            if (output is not null && !PluginError.IsPluginError(output))
                 break; // Success
 
             if (!pipeline.EnableSelfCorrection)
@@ -104,7 +104,7 @@ public sealed class DataNexusEngine(
         if (output is null)
             return ProcessingResult.Fail($"Pipeline '{pipeline.Name}' produced no output");
 
-        if (output.StartsWith("[PLUGIN_ERROR]"))
+        if (PluginError.IsPluginError(output))
             return ProcessingResult.Fail($"Pipeline '{pipeline.Name}' failed: {output}");
 
         logger.LogInformation("[User: {UserId}] Pipeline '{Name}' completed", user.UserId, pipeline.Name);
@@ -150,7 +150,7 @@ public sealed class DataNexusEngine(
         // 1. Run input plugin if agent uses it
         string inputData = request.InputSource;
         bool inputPluginRan = false;
-        if (agent.PluginNames.Contains("InputProcessor"))
+        if (agent.PluginNames.Contains(PluginNames.InputProcessor))
         {
             var pluginCtx = new PluginContext(user.UserId, request.InputSource, Metadata: request.Parameters);
             var pluginResult = await inputPlugin.ExecuteAsync(pluginCtx, ct);
@@ -170,7 +170,7 @@ public sealed class DataNexusEngine(
         // 4. Run output plugin if agent uses it
         bool outputPluginRan = false;
         string? outputPluginResult = null;
-        if (agent.PluginNames.Contains("OutputIntegrator"))
+        if (agent.PluginNames.Contains(PluginNames.OutputIntegrator))
         {
             var outCtx = new PluginContext(
                 user.UserId, llmResponse,
@@ -259,7 +259,7 @@ public sealed class DataNexusEngine(
             var run = await InProcessExecution.RunAsync(workflow, request.InputSource, cancellationToken: ct);
             output = ExtractWorkflowOutput(run);
 
-            if (output is not null && !output.StartsWith("[PLUGIN_ERROR]")
+            if (output is not null && !PluginError.IsPluginError(output)
                 && !output.Contains("Schema mismatch"))
                 break;
         }
@@ -267,7 +267,7 @@ public sealed class DataNexusEngine(
         if (output is null)
             return ProcessingResult.Fail("Default pipeline produced no output");
 
-        if (output.StartsWith("[PLUGIN_ERROR]") || output.Contains("Schema mismatch"))
+        if (PluginError.IsPluginError(output) || output.Contains("Schema mismatch"))
             return ProcessingResult.Fail($"Default pipeline failed: {output}");
 
         List<string> warnings = [];
@@ -340,7 +340,7 @@ public sealed class DataNexusEngine(
             // Extract the final output from MAF workflow events
             output = ExtractWorkflowOutput(run);
 
-            if (output is not null && !output.StartsWith("[PLUGIN_ERROR]"))
+            if (output is not null && !PluginError.IsPluginError(output))
                 break; // Success
 
             if (!orchestration.EnableSelfCorrection)
@@ -350,7 +350,7 @@ public sealed class DataNexusEngine(
         if (output is null)
             return ProcessingResult.Fail($"Orchestration '{orchestration.Name}' produced no output");
 
-        if (output.StartsWith("[PLUGIN_ERROR]"))
+        if (PluginError.IsPluginError(output))
             return ProcessingResult.Fail($"Orchestration '{orchestration.Name}' failed: {output}");
 
         logger.LogInformation(

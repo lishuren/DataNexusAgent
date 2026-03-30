@@ -45,10 +45,12 @@ public static class ExternalAgentAdapter
 
                     var outputText = result.Success
                         ? result.Data?.ToString() ?? result.Message
-                        : $"[ERROR] {result.Message}";
+                        : PluginError.Format($"External agent '{agentDef.Name}': {result.Message}");
 
                     return new AgentResponse([new ChatMessage(ChatRole.Assistant, outputText)]);
                 },
+                // External agents completely override execution — pass null to let MAF
+                // auto-derive streaming via the non-streaming path.
                 runStreamingFunc: null)
             .Build();
     }

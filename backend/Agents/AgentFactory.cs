@@ -134,8 +134,8 @@ public sealed class AgentFactory(
     {
         var baseAgent = await CreateAnyAgentAsync(agentDef, user, ct);
 
-        var hasInput = agentDef.PluginNames.Contains("InputProcessor");
-        var hasOutput = agentDef.PluginNames.Contains("OutputIntegrator");
+        var hasInput = agentDef.PluginNames.Contains(PluginNames.InputProcessor);
+        var hasOutput = agentDef.PluginNames.Contains(PluginNames.OutputIntegrator);
 
         if (!hasInput && !hasOutput)
             return baseAgent;
@@ -158,9 +158,7 @@ public sealed class AgentFactory(
                         var result = await inputPlugin.ExecuteAsync(ctx, cancellationToken);
                         if (!result.Success)
                             return new AgentResponse([new ChatMessage(ChatRole.Assistant,
-                                $"[PLUGIN_ERROR] Input: {result.ErrorMessage}")]);
-
-                        // Replace the user message with parsed content
+                            PluginError.Format($"Input: {result.ErrorMessage}"))]);
                         if (lastUser is not null)
                         {
                             var idx = msgList.IndexOf(lastUser);
@@ -181,11 +179,13 @@ public sealed class AgentFactory(
                         var outResult = await outputPlugin.ExecuteAsync(outCtx, cancellationToken);
                         if (!outResult.Success)
                             return new AgentResponse([new ChatMessage(ChatRole.Assistant,
-                                $"[PLUGIN_ERROR] {outResult.ErrorCode}: {outResult.ErrorMessage}")]);
+                                PluginError.Format(outResult.ErrorCode ?? "ERROR", outResult.ErrorMessage ?? "Unknown error"))]);
                     }
 
                     return response;
                 },
+                // Middleware transforms messages (InputProcessor/OutputIntegrator),
+                // so pass null to let MAF auto-derive streaming via the non-streaming path.
                 runStreamingFunc: null)
             .Build();
     }

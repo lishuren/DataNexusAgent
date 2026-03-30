@@ -119,7 +119,11 @@ public sealed class PlannerService(
                     plannerLogger.LogInformation("[User: {UserId}] Planner agent completed", userId);
                     return response;
                 },
-                runStreamingFunc: null)
+                runStreamingFunc: (messages, session, options, innerAgent, cancellationToken) =>
+                {
+                    plannerLogger.LogInformation("[User: {UserId}] Planner agent streaming", userId);
+                    return innerAgent.RunStreamingAsync(messages, session, options, cancellationToken);
+                })
             .Build();
 
         // 5. Run the planner agent via MAF
