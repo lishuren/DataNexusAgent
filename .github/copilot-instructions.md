@@ -40,6 +40,7 @@ graph TB
             EP_Pipeline["/api/process/pipeline"]
             EP_Skills["/api/skills"]
             EP_Agents["/api/agents"]
+            EP_Orch["/api/orchestrations"]
         end
 
         subgraph "DataNexus Engine  (Microsoft Agent Framework)"
@@ -47,14 +48,19 @@ graph TB
             AF["AgentFactory\n(ChatClientAgent · skills · middleware)"]
             SingleRun["RunSingleAgent\n(plugins → AIAgent.RunAsync → plugins)"]
             Pipeline["RunPipeline\n(BuildSequential → InProcessExecution)"]
+            Orchestration["RunOrchestration\n(Planner → Approve → BuildSequential)"]
             SelfCorrect["Self-Correction\n(workflow retry on error)"]
             AF --> SingleRun
             AF --> Pipeline
+            AF --> Orchestration
             Pipeline --> SelfCorrect
+            Orchestration --> SelfCorrect
         end
 
+        Planner["PlannerService\n(ChatClientAgent · goal decomposition)"]
         AR["AgentRegistry\n(EF Core · CRUD · seeding)"]
         SR["SkillRegistry\n(EF Core · CRUD · seeding)"]
+        OR["OrchestrationRegistry\n(EF Core · lifecycle · marketplace)"]
     end
 
     subgraph "Data Layer"
@@ -81,10 +87,16 @@ graph TB
     MW --> EP_Pipeline
     MW --> EP_Skills
     MW --> EP_Agents
+    MW --> EP_Orch
     EP_Process --> SingleRun
     EP_Pipeline --> Pipeline
+    EP_Orch --> Planner
+    EP_Orch --> Orchestration
+    Planner --> GH_Models
+    Planner --> AR
     EP_Skills --> SR
     EP_Agents --> AR
+    OR --> PG
     SR --> PG
     AR --> PG
     SingleRun -- "system prompt" --> GH_Models
@@ -96,7 +108,7 @@ graph TB
     classDef db fill:#22c55e,color:#fff,stroke:#16a34a
     classDef auth fill:#f59e0b,color:#fff,stroke:#d97706
     classDef ai fill:#ec4899,color:#fff,stroke:#db2777
-    class SingleRun,Pipeline,SelfCorrect agent
+    class SingleRun,Pipeline,Orchestration,SelfCorrect agent
     class PG db
     class Keycloak,MW auth
     class GH_Models ai
@@ -133,6 +145,24 @@ graph TB
   - **Security**: command allowlist (`ExternalAgents:AllowedCommands`), working directory allowlist,
     hard timeout cap (`ExternalAgents:MaxTimeoutSeconds`), no shell invocation (`UseShellExecute=false`).
   - Config section: `ExternalAgents` in `appsettings.json`.
+- **Orchestrations** (LLM-planned workflows): Stored in PostgreSQL (`orchestrations` table) via EF Core.
+  `PlannerService` uses a MAF `ChatClientAgent` to decompose a user goal into ordered agent steps.
+  The plan is saved as a `Draft` and requires explicit user approval before execution.
+  - **Status lifecycle**: `Draft → Approved → Running → Completed/Failed` or `Draft → Rejected`.
+    Users can also `ResetToDraft` to revise a rejected or failed plan.
+  - **PlannerService**: Creates a `ChatClientAgent` with a system prompt containing agent catalog +
+    decomposition rules, wrapped with AF audit-logging middleware. Parses the LLM response into
+    `OrchestrationStep` objects, validating agent IDs against the registry.
+  - **Approval gate**: Only `Approved` orchestrations can execute. The frontend shows the plan steps,
+    lets users swap agents, override prompts, remove steps, then approve or reject.
+  - **Execution**: `RunOrchestrationAsync` resolves agent definitions (with any prompt overrides),
+    builds AF agents via `CreateOrchestrationStepAgentAsync`, chains them with
+    `AgentWorkflowBuilder.BuildSequential`, and executes via `InProcessExecution.RunAsync`.
+  - **Marketplace**: Only `Approved` + `Private` orchestrations can be published. Users can clone
+    public orchestrations into their own workspace.
+  - REST API: `POST /api/orchestrations/plan`, `GET/PUT/DELETE /api/orchestrations/{id}`,
+    `POST .../approve`, `POST .../reject`, `POST .../reset`, `POST .../run`,
+    `POST .../publish`, `POST .../unpublish`, `POST .../clone`.
 - **Pipelines**: Stored in PostgreSQL (`pipelines` table) via EF Core. `PipelineRegistry` provides
   full CRUD (list, get, create, update, delete, publish). Each pipeline has:
   - `Name` — display name.
@@ -235,8 +265,8 @@ Example (Cloud-enabled agent with OneDrive):
 ### Frontend (User-Facing UI)
 
 - **Auth**: `keycloak-js` handles login/token lifecycle; token is passed as Bearer to backend.
-- **Pages**: Process (dynamic agent UI), Agents (create/publish/compose pipelines),
-  Skills (manage), Marketplace (browse public agents + skills).
+- **Pages**: Process (dynamic agent UI + AI orchestration planner), Agents (create/publish/compose pipelines),
+  Skills (manage), Marketplace (browse public agents, skills, + orchestrations).
 - **Dynamic Agent UI**: When a user selects an agent on the Process page, the form fields
   are rendered dynamically from the agent's `uiSchema`. Each agent has its own tailored input form.
 - **API proxy**: Vite dev server proxies `/api` to the backend at `localhost:5000`.
@@ -288,12 +318,15 @@ DataNexus/                          ← monorepo root
 │   ├── Agents/
 │   │   ├── DataNexusEngine.cs                  — orchestration engine (AF workflows)
 │   │   ├── AgentFactory.cs                     — creates ChatClientAgent from AgentDefinition
+│   │   ├── PlannerService.cs                   — LLM-driven goal decomposition (ChatClientAgent)
 │   │   ├── ExternalAgentAdapter.cs             — wraps ExternalProcessRunner as AF AIAgent
 │   │   ├── ExternalProcessRunner.cs            — CLI process execution (security boundary)
 │   │   ├── ExternalAgentOptions.cs             — command allowlist / timeout config
 │   │   └── IAgentExecutionRuntime.cs           — runtime interface
-│   ├── Core/                       ← AgentEntity, AgentRegistry, PipelineEntity, PipelineRegistry, SkillRegistry, SkillDefinition
-│   ├── Endpoints/                  ← ProcessingEndpoints, AgentEndpoints, PipelineEndpoints, SkillsEndpoints
+│   ├── Core/                       ← AgentEntity, AgentRegistry, OrchestrationEntity, OrchestrationRegistry,
+│   │                                  PipelineEntity, PipelineRegistry, SkillRegistry, SkillDefinition
+│   ├── Endpoints/                  ← ProcessingEndpoints, AgentEndpoints, OrchestrationEndpoints,
+│   │                                  PipelineEndpoints, SkillsEndpoints
 │   ├── Identity/                   ← KeycloakAuthService, KeycloakMiddleware, UserContext
 │   ├── Models/                     ← Request/response records
 │   └── Plugins/                    ← InputProcessorPlugin, OutputIntegratorPlugin
@@ -307,12 +340,13 @@ DataNexus/                          ← monorepo root
 │       ├── main.tsx
 │       ├── App.tsx
 │       ├── components/             ← AgentCard, AgentSelector, CreateAgentForm, DynamicForm,
-│       │                              ErrorBoundary, Layout, PipelineBuilder, ProcessingPanel,
-│       │                              QuickActions, RecentTasks, ResultBox, SavedPipelines, SkillsPanel
+│       │                              ErrorBoundary, Layout, OrchestrationReview, PipelineBuilder,
+│       │                              ProcessingPanel, QuickActions, RecentTasks, ResultBox,
+│       │                              SavedPipelines, SkillsPanel
 │       │   └── pickers/            ← OneDriveFilePicker, GoogleDriveFilePicker (lazy-loaded)
 │       ├── services/               ← auth.ts (Keycloak), api.ts (fetch wrapper)
 │       ├── types/                  ← TypeScript interfaces mirroring backend DTOs
-│       ├── hooks/                  ← useAgents, usePipelines, useSkills
+│       ├── hooks/                  ← useAgents, useOrchestrations, usePipelines, useSkills
 │       ├── pages/                  ← ProcessPage, AgentsPage, SkillsPage, MarketplacePage
 │       ├── utils/                  ← compressFile.ts (gzip compression utility)
 │       └── styles/
@@ -353,3 +387,8 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
    plugins are executable C# code that performs I/O. Skills cannot invoke plugins. This is a
    deliberate security boundary: skill authors (any user) must not be able to trigger privileged
    actions (API calls, DB writes) that only agent-configured plugins should perform.
+9. **LLM-planned orchestrations with approval gate** — `PlannerService` (a MAF `ChatClientAgent`)
+   decomposes user goals into agent steps. Plans are saved as `Draft` and require explicit user
+   approval before execution. Users can swap agents, override prompts, and remove steps.
+   Approved orchestrations execute via `AgentWorkflowBuilder.BuildSequential` + `InProcessExecution.RunAsync`,
+   fully leveraging MAF workflow primitives. Published orchestrations are shareable via the marketplace.

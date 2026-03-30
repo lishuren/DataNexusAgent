@@ -119,6 +119,7 @@ builder.Services.AddHttpClient("DataNexusOutput");
 builder.Services.AddSingleton<SkillRegistry>();
 builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<PipelineRegistry>();
+builder.Services.AddSingleton<OrchestrationRegistry>();
 builder.Services.AddSingleton<TaskHistoryRegistry>();
 
 // External agent execution
@@ -132,6 +133,7 @@ builder.Services.AddScoped<OutputIntegratorPlugin>();
 
 // Agent engine
 builder.Services.AddScoped<AgentFactory>();
+builder.Services.AddScoped<PlannerService>();
 builder.Services.AddScoped<DataNexusEngine>();
 builder.Services.AddScoped<IAgentExecutionRuntime>(sp => sp.GetRequiredService<DataNexusEngine>());
 
@@ -176,6 +178,7 @@ app.MapProcessingEndpoints();
 app.MapSkillsEndpoints();
 app.MapAgentEndpoints();
 app.MapPipelineEndpoints();
+app.MapOrchestrationEndpoints();
 app.MapTaskHistoryEndpoints();
 
 app.Run();

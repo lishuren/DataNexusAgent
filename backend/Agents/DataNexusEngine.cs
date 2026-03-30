@@ -276,4 +276,90 @@ public sealed class DataNexusEngine(
         return ProcessingResult.Ok("Default pipeline completed successfully", output,
             warnings.Count > 0 ? warnings : null);
     }
+
+    /// <summary>
+    /// Executes an approved orchestration using MAF's <see cref="AgentWorkflowBuilder.BuildSequential"/>
+    /// and <see cref="InProcessExecution.RunAsync"/>. Each step is constructed as an AF
+    /// <see cref="AIAgent"/> with plugins embedded as middleware, supporting optional prompt overrides.
+    /// Self-correction retries the entire workflow (matching pipeline behavior).
+    /// </summary>
+    public async Task<ProcessingResult> RunOrchestrationAsync(
+        OrchestrationDefinition orchestration,
+        string inputSource,
+        UserContext user,
+        CancellationToken ct = default)
+    {
+        logger.LogInformation(
+            "[User: {UserId}] Orchestration '{Name}' started with {Count} steps",
+            user.UserId, orchestration.Name, orchestration.Steps.Count);
+
+        // 1. Resolve agent definitions for every step
+        var stepAgentDefs = new List<(OrchestrationStep Step, AgentDefinition Def)>(orchestration.Steps.Count);
+        foreach (var step in orchestration.Steps)
+        {
+            var agentDef = await agentRegistry.GetAgentByIdAsync(step.AgentId, ct)
+                ?? throw new InvalidOperationException(
+                    $"Step {step.StepNumber} references unknown agent {step.AgentId}");
+            stepAgentDefs.Add((step, agentDef));
+        }
+
+        // 2. Build AF agents with plugins embedded as middleware (one per step)
+        var afAgents = new List<AIAgent>(orchestration.Steps.Count);
+        foreach (var (step, agentDef) in stepAgentDefs)
+        {
+            logger.LogInformation(
+                "[User: {UserId}] Orchestration '{Name}' building step {Step}: {Agent}",
+                user.UserId, orchestration.Name, step.StepNumber, agentDef.Name);
+
+            var stepParams = step.Parameters as IReadOnlyDictionary<string, string>;
+
+            var afAgent = await agentFactory.CreateOrchestrationStepAgentAsync(
+                agentDef, user, inputPlugin, outputPlugin,
+                step.PromptOverride, stepParams, ct);
+            afAgents.Add(afAgent);
+        }
+
+        // 3. Build sequential workflow via MAF
+        var workflow = AgentWorkflowBuilder.BuildSequential(orchestration.Name, afAgents);
+
+        // 4. Execute with self-correction retry (same pattern as RunPipelineAsync)
+        var maxAttempts = orchestration.EnableSelfCorrection
+            ? orchestration.MaxCorrectionAttempts : 1;
+        Run? run = null;
+        string? output = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            if (attempt > 1)
+                logger.LogInformation(
+                    "[User: {UserId}] Orchestration '{Name}' self-correction attempt {Attempt}",
+                    user.UserId, orchestration.Name, attempt);
+
+            run = await InProcessExecution.RunAsync(workflow, inputSource, cancellationToken: ct);
+
+            // Extract the final output from MAF workflow events
+            output = ExtractWorkflowOutput(run);
+
+            if (output is not null && !output.StartsWith("[PLUGIN_ERROR]"))
+                break; // Success
+
+            if (!orchestration.EnableSelfCorrection)
+                break;
+        }
+
+        if (output is null)
+            return ProcessingResult.Fail($"Orchestration '{orchestration.Name}' produced no output");
+
+        if (output.StartsWith("[PLUGIN_ERROR]"))
+            return ProcessingResult.Fail($"Orchestration '{orchestration.Name}' failed: {output}");
+
+        logger.LogInformation(
+            "[User: {UserId}] Orchestration '{Name}' completed ({StepCount} steps)",
+            user.UserId, orchestration.Name, orchestration.Steps.Count);
+
+        return ProcessingResult.Ok(
+            $"Orchestration '{orchestration.Name}' completed ({orchestration.Steps.Count} steps)",
+            output,
+            run?.NewEventCount > 0 ? [$"Workflow produced {run.NewEventCount} events"] : null);
+    }
 }

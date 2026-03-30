@@ -108,3 +108,42 @@ export interface TaskHistory {
   durationMs: number;
   createdAt: string;
 }
+
+// --- Orchestrations ---
+
+export type OrchestrationStatus =
+  | "Draft"
+  | "Approved"
+  | "Rejected"
+  | "Running"
+  | "Completed"
+  | "Failed";
+
+export interface OrchestrationStep {
+  stepNumber: number;
+  title: string;
+  description: string;
+  agentId: number;
+  agentName: string;
+  isEdited: boolean;
+  promptOverride: string | null;
+  parameters: Record<string, string> | null;
+}
+
+export interface Orchestration {
+  id: number;
+  name: string;
+  goal: string;
+  steps: OrchestrationStep[];
+  status: OrchestrationStatus;
+  plannerModel: string | null;
+  plannerNotes: string | null;
+  enableSelfCorrection: boolean;
+  maxCorrectionAttempts: number;
+  scope: "Public" | "Private";
+  ownerId: string | null;
+  publishedByUserId: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -8,6 +8,7 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
     public DbSet<SkillEntity> Skills => Set<SkillEntity>();
     public DbSet<AgentEntity> Agents => Set<AgentEntity>();
     public DbSet<PipelineEntity> Pipelines => Set<PipelineEntity>();
+    public DbSet<OrchestrationEntity> Orchestrations => Set<OrchestrationEntity>();
     public DbSet<TaskHistoryEntity> TaskHistory => Set<TaskHistoryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -58,6 +59,28 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
             entity.HasIndex(e => e.Scope);
 
             entity.Property(e => e.Scope)
+                  .HasConversion<string>()
+                  .HasMaxLength(20);
+
+            entity.Property(e => e.MaxCorrectionAttempts)
+                  .HasDefaultValue(3);
+        });
+
+        modelBuilder.Entity<OrchestrationEntity>(entity =>
+        {
+            entity.ToTable("orchestrations");
+
+            entity.HasIndex(e => new { e.Name, e.OwnerId })
+                  .IsUnique();
+
+            entity.HasIndex(e => e.Scope);
+            entity.HasIndex(e => e.Status);
+
+            entity.Property(e => e.Scope)
+                  .HasConversion<string>()
+                  .HasMaxLength(20);
+
+            entity.Property(e => e.Status)
                   .HasConversion<string>()
                   .HasMaxLength(20);
 

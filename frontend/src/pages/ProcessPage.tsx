@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Agent, Pipeline, ProcessingResult, UiField } from "@/types/api";
-import { listAgents, listPipelines, processData, runPipeline, getAgent } from "@/services/api";
+import type { Agent, Orchestration, Pipeline, ProcessingResult, UiField } from "@/types/api";
+import { listAgents, listPipelines, listOrchestrations, processData, runPipeline, getAgent, planOrchestration } from "@/services/api";
+import { getUserId } from "@/services/auth";
 import { AgentSelector } from "@/components/AgentSelector";
 import { DynamicForm } from "@/components/DynamicForm";
 import { QuickActions } from "@/components/QuickActions";
 import { ResultBox } from "@/components/ResultBox";
 import { RecentTasks } from "@/components/RecentTasks";
+import { OrchestrationReview } from "@/components/OrchestrationReview";
 
 export default function ProcessPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<number | undefined>();
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | undefined>();
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -17,6 +20,13 @@ export default function ProcessPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Orchestration planner state
+  const [planGoal, setPlanGoal] = useState("");
+  const [planConstraints, setPlanConstraints] = useState("");
+  const [planning, setPlanning] = useState(false);
+  const [planMsg, setPlanMsg] = useState("");
+  const userId = getUserId();
 
   const normalizeUiSchema = (schema: Agent["uiSchema"]): UiField[] => {
     if (!schema) return [];
@@ -55,14 +65,15 @@ export default function ProcessPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [a, p] = await Promise.all([listAgents(), listPipelines()]);
+      const [a, p, o] = await Promise.all([listAgents(), listPipelines(), listOrchestrations()]);
       setAgents(a);
       setPipelines(p);
+      setOrchestrations(o);
       if (a.length > 0 && !selectedAgentId && !selectedPipelineId) {
         selectAgent(a[0]!.id, a);
       }
     } catch (e) {
-      console.warn("Failed to load agents/pipelines:", e);
+      console.warn("Failed to load agents/pipelines/orchestrations:", e);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,6 +210,73 @@ export default function ProcessPage() {
       <QuickActions actions={[]} />
 
       {result && <ResultBox result={result} />}
+
+      {/* ── Orchestration Planner ────────────────────────────────── */}
+      <div className="card">
+        <h2>🗂️ AI Orchestration Planner</h2>
+        <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+          Describe your goal and the AI will decompose it into agent steps for your review.
+        </p>
+        <textarea
+          placeholder="Describe your goal, e.g. 'Parse my sales Excel, convert to SQL, and push to our REST API'"
+          value={planGoal}
+          onChange={(e) => setPlanGoal(e.target.value)}
+          style={{ minHeight: "60px", marginBottom: "0.5rem" }}
+        />
+        <input
+          placeholder="Constraints (optional), e.g. 'Use JSON as intermediate format'"
+          value={planConstraints}
+          onChange={(e) => setPlanConstraints(e.target.value)}
+          style={{ marginBottom: "0.5rem" }}
+        />
+        <button
+          className="btn btn-primary"
+          disabled={planning || !planGoal.trim()}
+          onClick={async () => {
+            setPlanning(true);
+            setPlanMsg("");
+            try {
+              await planOrchestration({
+                goal: planGoal.trim(),
+                constraints: planConstraints.trim() || undefined,
+              });
+              setPlanGoal("");
+              setPlanConstraints("");
+              setPlanMsg("Plan generated! Review it below.");
+              refresh();
+            } catch (e) {
+              setPlanMsg(e instanceof Error ? e.message : String(e));
+            }
+            setPlanning(false);
+          }}
+        >
+          {planning ? "Planning…" : "🧠 Generate Plan"}
+        </button>
+        {planMsg && (
+          <div style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: planMsg.includes("generated") ? "var(--text-muted)" : "var(--danger)" }}>
+            {planMsg}
+          </div>
+        )}
+      </div>
+
+      {/* ── Orchestration Review Cards ───────────────────────────── */}
+      {orchestrations.length > 0 && (
+        <div>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: "0.75rem" }}>
+            📋 My Orchestrations ({orchestrations.length})
+          </h2>
+          {orchestrations.map((o) => (
+            <OrchestrationReview
+              key={o.id}
+              orchestration={o}
+              agents={agents}
+              currentUserId={userId}
+              onUpdated={refresh}
+              onResult={setResult}
+            />
+          ))}
+        </div>
+      )}
 
       <RecentTasks />
     </>

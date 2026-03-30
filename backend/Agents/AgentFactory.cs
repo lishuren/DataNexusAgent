@@ -189,4 +189,28 @@ public sealed class AgentFactory(
                 runStreamingFunc: null)
             .Build();
     }
+
+    /// <summary>
+    /// Creates an AF pipeline-ready agent for an orchestration step.
+    /// Supports an optional prompt override that replaces the agent's stored system prompt
+    /// while still resolving skills and embedding plugins as AF middleware.
+    /// Used by <see cref="DataNexusEngine.RunOrchestrationAsync"/> to build agents from
+    /// <see cref="OrchestrationStep"/> definitions.
+    /// </summary>
+    public async Task<AIAgent> CreateOrchestrationStepAgentAsync(
+        AgentDefinition agentDef,
+        UserContext user,
+        InputProcessorPlugin inputPlugin,
+        OutputIntegratorPlugin outputPlugin,
+        string? promptOverride,
+        IReadOnlyDictionary<string, string>? parameters,
+        CancellationToken ct = default)
+    {
+        // Apply prompt override before building
+        var effectiveDef = promptOverride is not null
+            ? agentDef with { SystemPrompt = promptOverride }
+            : agentDef;
+
+        return await CreatePipelineAgentAsync(effectiveDef, user, inputPlugin, outputPlugin, parameters, ct);
+    }
 }

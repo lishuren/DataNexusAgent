@@ -1,5 +1,5 @@
 import { getToken, logout } from "./auth";
-import type { Agent, Pipeline, PipelineRequest, ProcessingRequest, ProcessingResult, Skill, TaskHistory } from "@/types/api";
+import type { Agent, Orchestration, OrchestrationStep, Pipeline, PipelineRequest, ProcessingRequest, ProcessingResult, Skill, TaskHistory } from "@/types/api";
 
 const BASE_URL = "/api";
 
@@ -205,3 +205,71 @@ export interface MeResponse {
 }
 
 export const fetchMe = () => apiFetch<MeResponse>("/me");
+
+// --- Orchestrations ---
+
+export const planOrchestration = (request: {
+  goal: string;
+  name?: string;
+  constraints?: string;
+  agentIds?: number[];
+  enableSelfCorrection?: boolean;
+  maxCorrectionAttempts?: number;
+}) =>
+  apiFetch<Orchestration>("/orchestrations/plan", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+
+export const listOrchestrations = () =>
+  apiFetch<Orchestration[]>("/orchestrations");
+
+export const listPublicOrchestrations = () =>
+  apiFetch<Orchestration[]>("/orchestrations/public");
+
+export const getOrchestration = (id: number) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}`);
+
+export const updateOrchestration = (id: number, data: {
+  name: string;
+  steps: OrchestrationStep[];
+  enableSelfCorrection?: boolean;
+  maxCorrectionAttempts?: number;
+}) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+export const approveOrchestration = (id: number) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}/approve`, { method: "POST" });
+
+export const rejectOrchestration = (id: number, reason?: string) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+
+export const resetOrchestration = (id: number) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}/reset`, { method: "POST" });
+
+export const runOrchestration = (id: number, inputSource: string) =>
+  apiFetch<ProcessingResult>(`/orchestrations/${id}/run`, {
+    method: "POST",
+    body: JSON.stringify({ inputSource }),
+  });
+
+export const publishOrchestration = (id: number) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}/publish`, { method: "POST" });
+
+export const unpublishOrchestration = (id: number) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}/unpublish`, { method: "POST" });
+
+export const cloneOrchestration = (id: number, name: string) =>
+  apiFetch<Orchestration>(`/orchestrations/${id}/clone`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+
+export const deleteOrchestration = (id: number) =>
+  apiFetch<void>(`/orchestrations/${id}`, { method: "DELETE" });
