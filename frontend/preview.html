@@ -221,8 +221,9 @@
     <header>
       <h1><span>⬡</span> DataNexus</h1>
       <nav>
-        <a href="#" class="active" onclick="showPage('process')">Process</a>
+        <a href="#" class="active" onclick="showPage('process')">Execute</a>
         <a href="#" onclick="showPage('agents')">Agents</a>
+        <a href="#" onclick="showPage('orchestrations')">Orchestrations</a>
         <a href="#" onclick="showPage('skills')">Skills</a>
         <a href="#" onclick="showPage('marketplace')">Marketplace</a>
         <span class="user-info"><span class="status-dot"></span>bob123</span>
@@ -321,65 +322,6 @@ Duration: 3.2s
 
 <strong>Warnings:</strong> None</div>
 
-        <!-- AI Orchestration Planner -->
-        <div class="card" style="margin-top:1rem;">
-          <h2>🧩 AI Orchestration Planner</h2>
-          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">Describe a goal and let the AI decompose it into an agent workflow. Review, edit, approve, then run.</p>
-          <textarea placeholder="Describe your goal, e.g.&#10;• Parse the Q1 spreadsheet, validate data quality, then push clean records to the CRM API&#10;• Extract invoice data from PDF, convert to SQL, and generate a summary report" style="min-height:80px;">Parse Q1-2026.xlsx, validate data quality rules (no nulls in email column, valid date formats), then push clean records to https://api.acme.com/v2/records</textarea>
-          <input placeholder="Constraints (optional)" value="Skip rows with missing email addresses" style="margin-top:0;" />
-          <div style="display:flex; gap:0.75rem; align-items:center; margin-top:0.5rem;">
-            <button class="btn btn-primary" onclick="document.getElementById('orch-sample').style.display='block'">🤖 Generate Plan</button>
-            <span style="color:var(--text-muted); font-size:0.8rem;">Uses GPT-4o to decompose your goal into steps</span>
-          </div>
-        </div>
-
-        <!-- Sample orchestration review (initially hidden, shown on "Generate Plan") -->
-        <div class="card" id="orch-sample" style="margin-top:1rem; display:block;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
-            <div>
-              <h2 style="margin-bottom:0.25rem;">📋 Parse, Validate & Push to CRM</h2>
-              <span class="orch-status orch-status-draft">Draft</span>
-            </div>
-            <span style="font-size:0.75rem; color:var(--text-muted);">Planned by GPT-4o</span>
-          </div>
-          <div style="padding:0.5rem 0.75rem; background:rgba(245,158,11,0.05); border:1px solid var(--border); border-radius:0.5rem; margin-bottom:0.75rem; font-size:0.8rem; color:var(--text-muted);">
-            <strong>Planner notes:</strong> The goal was decomposed into 3 sequential steps: data parsing, quality validation, and API integration. The Data Analyst handles Excel parsing, Data Validator checks quality rules, and API Integrator pushes results.
-          </div>
-          <div>
-            <div class="orch-step">
-              <div class="orch-step-num">1</div>
-              <div class="orch-step-body">
-                <div class="orch-step-title">Parse Excel Data</div>
-                <div class="orch-step-desc">Read Q1-2026.xlsx and extract all rows into structured JSON format</div>
-                <div class="orch-step-agent">🧠 Data Analyst · <a href="#" style="color:var(--primary); font-size:0.7rem;">Edit prompt</a> · <a href="#" style="color:var(--text-muted); font-size:0.7rem;">Swap agent</a></div>
-              </div>
-            </div>
-            <div class="orch-step">
-              <div class="orch-step-num">2</div>
-              <div class="orch-step-body">
-                <div class="orch-step-title">Validate Data Quality</div>
-                <div class="orch-step-desc">Check for null emails, validate date formats, flag anomalies. Skip rows with missing emails.</div>
-                <div class="orch-step-agent">🔍 Data Validator · <a href="#" style="color:var(--primary); font-size:0.7rem;">Edit prompt</a> · <a href="#" style="color:var(--text-muted); font-size:0.7rem;">Swap agent</a></div>
-              </div>
-            </div>
-            <div class="orch-step">
-              <div class="orch-step-num">3</div>
-              <div class="orch-step-body">
-                <div class="orch-step-title">Push to CRM API</div>
-                <div class="orch-step-desc">Send validated records to https://api.acme.com/v2/records via POST</div>
-                <div class="orch-step-agent">🚀 API Integrator · <a href="#" style="color:var(--primary); font-size:0.7rem;">Edit prompt</a> · <a href="#" style="color:var(--text-muted); font-size:0.7rem;">Swap agent</a></div>
-              </div>
-            </div>
-          </div>
-          <div class="orch-actions">
-            <button class="btn btn-primary btn-sm">✓ Approve</button>
-            <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);">✗ Reject</button>
-            <button class="btn btn-sm btn-outline">🔄 Reset to Draft</button>
-            <button class="btn btn-sm btn-outline" style="opacity:0.5;" disabled>▶ Run</button>
-            <button class="btn btn-sm btn-outline">📋 Clone</button>
-          </div>
-        </div>
-
         <!-- Recent tasks -->
         <div class="card" style="margin-top:1rem;">
           <h2>🕘 Recent Tasks</h2>
@@ -417,6 +359,156 @@ Duration: 3.2s
               <span style="color:var(--text-muted); font-size:0.75rem;">Yesterday</span>
             </li>
           </ul>
+        </div>
+      </div>
+
+      <!-- ==================== ORCHESTRATIONS PAGE ==================== -->
+      <div id="page-orchestrations" class="tab-section">
+
+        <!-- AI Orchestration Planner -->
+        <div class="card">
+          <h2>🧠 AI Orchestration Planner</h2>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">Describe a goal and the AI will decompose it into an ordered agent workflow. Review, edit agents &amp; prompts, approve, then run.</p>
+          <textarea placeholder="Describe your goal, e.g.&#10;• Parse the Q1 spreadsheet, validate data quality, then push clean records to the CRM API&#10;• Extract invoice data from PDF, convert to SQL, and generate a summary report" style="min-height:80px;">Parse Q1-2026.xlsx, validate data quality rules (no nulls in email column, valid date formats), then push clean records to https://api.acme.com/v2/records</textarea>
+          <input placeholder="Constraints (optional), e.g. 'Use JSON as intermediate format, skip rows with missing emails'" value="Skip rows with missing email addresses" style="margin-top:0;" />
+          <div style="display:flex; gap:0.75rem; align-items:center; margin-top:0.5rem;">
+            <button class="btn btn-primary">🧠 Generate Plan</button>
+            <span style="color:var(--text-muted); font-size:0.8rem;">Uses GPT-4o to decompose your goal into agent steps</span>
+          </div>
+        </div>
+
+        <!-- My Orchestrations with filter -->
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+            <h2 style="margin:0;">📋 My Orchestrations (3)</h2>
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+              <button class="btn btn-sm btn-primary" style="font-size:0.7rem; padding:2px 8px;">All (3)</button>
+              <button class="btn btn-sm btn-outline" style="font-size:0.7rem; padding:2px 8px;">Draft (1)</button>
+              <button class="btn btn-sm btn-outline" style="font-size:0.7rem; padding:2px 8px;">Approved (1)</button>
+              <button class="btn btn-sm btn-outline" style="font-size:0.7rem; padding:2px 8px;">Completed (1)</button>
+            </div>
+          </div>
+
+          <!-- Orchestration 1: Draft -->
+          <div class="card" style="border-left:3px solid var(--primary); margin-bottom:0.75rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <div>
+                <h3 style="margin:0;">🗂️ Parse, Validate &amp; Push to CRM</h3>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Goal: Parse Q1-2026.xlsx, validate data quality, push to CRM API</div>
+              </div>
+              <span class="orch-status orch-status-draft">Draft</span>
+            </div>
+            <div style="padding:0.5rem 0.75rem; background:rgba(245,158,11,0.05); border:1px solid var(--border); border-radius:0.5rem; margin-bottom:0.75rem; font-size:0.8rem; color:var(--text-muted);">
+              <strong>Planner notes:</strong> Decomposed into 3 sequential steps. Data Analyst for parsing, Data Validator for quality, API Integrator for pushing.
+              <span style="color:var(--text-muted); margin-left:0.5rem;">(model: gpt-4o)</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.75rem;">
+              <div class="orch-step">
+                <div class="orch-step-num">1</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Parse Excel Data</div>
+                  <div class="orch-step-desc">Read Q1-2026.xlsx and extract all rows into structured JSON format</div>
+                  <div class="orch-step-agent">🧠 Data Analyst · <a href="#" style="color:var(--primary); font-size:0.7rem;">Edit prompt</a> · <a href="#" style="color:var(--text-muted); font-size:0.7rem;">Swap agent</a></div>
+                </div>
+              </div>
+              <div class="orch-step">
+                <div class="orch-step-num">2</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Validate Data Quality</div>
+                  <div class="orch-step-desc">Check for null emails, validate date formats, flag anomalies</div>
+                  <div class="orch-step-agent">🔍 Data Validator · <a href="#" style="color:var(--primary); font-size:0.7rem;">Edit prompt</a> · <a href="#" style="color:var(--text-muted); font-size:0.7rem;">Swap agent</a></div>
+                </div>
+              </div>
+              <div class="orch-step">
+                <div class="orch-step-num">3</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Push to CRM API</div>
+                  <div class="orch-step-desc">Send validated records to https://api.acme.com/v2/records via POST</div>
+                  <div class="orch-step-agent">🚀 API Integrator · <a href="#" style="color:var(--primary); font-size:0.7rem;">Edit prompt</a> · <a href="#" style="color:var(--text-muted); font-size:0.7rem;">Swap agent</a></div>
+                </div>
+              </div>
+            </div>
+            <div class="orch-actions">
+              <button class="btn btn-primary btn-sm">✓ Approve</button>
+              <button class="btn btn-sm btn-outline">✏️ Edit</button>
+              <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);">✗ Reject</button>
+              <button class="btn btn-sm btn-outline">📋 Clone</button>
+              <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);">Delete</button>
+            </div>
+          </div>
+
+          <!-- Orchestration 2: Approved -->
+          <div class="card" style="border-left:3px solid var(--success); margin-bottom:0.75rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <div>
+                <h3 style="margin:0;">🗂️ ETL + Summary Report</h3>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Goal: Run Python ETL on sales data, generate executive summary</div>
+              </div>
+              <span class="orch-status orch-status-approved">Approved</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.75rem;">
+              <div class="orch-step">
+                <div class="orch-step-num">1</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Run ETL Script</div>
+                  <div class="orch-step-desc">Execute Python ETL to clean and transform raw sales data</div>
+                  <div class="orch-step-agent">🐍 Python ETL</div>
+                </div>
+              </div>
+              <div class="orch-step">
+                <div class="orch-step-num">2</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Generate Report</div>
+                  <div class="orch-step-desc">Create an executive summary with key findings and trends</div>
+                  <div class="orch-step-agent">📝 Report Writer</div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem; align-items:center;">
+              <input placeholder="Input source (URL, text, or paste data)" style="flex:1; margin:0;" />
+              <button class="btn btn-primary">▶ Run</button>
+            </div>
+            <div class="orch-actions">
+              <button class="btn btn-sm btn-outline">↩ Reset to Draft</button>
+              <button class="btn btn-sm btn-primary">Publish</button>
+              <button class="btn btn-sm btn-outline">📋 Clone</button>
+              <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);">Delete</button>
+            </div>
+          </div>
+
+          <!-- Orchestration 3: Completed -->
+          <div class="card" style="border-left:3px solid var(--success); margin-bottom:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <div>
+                <h3 style="margin:0;">🗂️ Invoice Processing Pipeline</h3>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Goal: Extract invoice data, convert currencies, push to accounting API</div>
+              </div>
+              <span class="orch-status orch-status-completed">Completed</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.75rem;">
+              <div class="orch-step">
+                <div class="orch-step-num">1</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Parse Invoice Data</div>
+                  <div class="orch-step-desc">Extract line items and totals from invoice spreadsheet</div>
+                  <div class="orch-step-agent">🧠 Data Analyst</div>
+                </div>
+              </div>
+              <div class="orch-step">
+                <div class="orch-step-num">2</div>
+                <div class="orch-step-body">
+                  <div class="orch-step-title">Push to Accounting</div>
+                  <div class="orch-step-desc">Send processed invoices to accounting REST API</div>
+                  <div class="orch-step-agent">🚀 API Integrator</div>
+                </div>
+              </div>
+            </div>
+            <div class="orch-actions">
+              <button class="btn btn-sm btn-outline">↩ Reset to Draft</button>
+              <button class="btn btn-sm btn-outline">📋 Clone</button>
+              <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);">Delete</button>
+            </div>
+          </div>
         </div>
       </div>
 

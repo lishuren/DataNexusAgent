@@ -17,6 +17,7 @@ export function Layout() {
         <nav>
           <NavLink to="/">Execute</NavLink>
           <NavLink to="/agents">Agents</NavLink>
+          <NavLink to="/orchestrations">Orchestrations</NavLink>
           <NavLink to="/skills">Skills</NavLink>
           <NavLink to="/marketplace">Marketplace</NavLink>
           <span className="user-info">

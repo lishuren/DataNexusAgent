@@ -265,7 +265,8 @@ Example (Cloud-enabled agent with OneDrive):
 ### Frontend (User-Facing UI)
 
 - **Auth**: `keycloak-js` handles login/token lifecycle; token is passed as Bearer to backend.
-- **Pages**: Process (dynamic agent UI + AI orchestration planner), Agents (create/publish/compose pipelines),
+- **Pages**: Process (dynamic agent UI + task execution), Agents (create/publish/compose pipelines),
+  Orchestrations (AI planner + review/edit/approve/run/publish/clone/delete),
   Skills (manage), Marketplace (browse public agents, skills, + orchestrations).
 - **Dynamic Agent UI**: When a user selects an agent on the Process page, the form fields
   are rendered dynamically from the agent's `uiSchema`. Each agent has its own tailored input form.
@@ -347,7 +348,7 @@ DataNexus/                          ← monorepo root
 │       ├── services/               ← auth.ts (Keycloak), api.ts (fetch wrapper)
 │       ├── types/                  ← TypeScript interfaces mirroring backend DTOs
 │       ├── hooks/                  ← useAgents, useOrchestrations, usePipelines, useSkills
-│       ├── pages/                  ← ProcessPage, AgentsPage, SkillsPage, MarketplacePage
+│       ├── pages/                  ← ProcessPage, AgentsPage, OrchestrationsPage, SkillsPage, MarketplacePage
 │       ├── utils/                  ← compressFile.ts (gzip compression utility)
 │       └── styles/
 └── DataNexus.sln                   ← solution file referencing backend/DataNexus.csproj
