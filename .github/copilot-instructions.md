@@ -412,6 +412,23 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
     `Microsoft.Agents.AI.Hosting` for DI, graph workflows, concurrent patterns, OpenTelemetry),
     migrate existing code to those primitives rather than maintaining custom implementations.
     Well-known constants (`PluginNames`, `PluginError`) replace magic strings throughout the codebase.
+11. **OneDrive auth — `BroadcastChannel` + `loginRedirect` window (never `acquireTokenPopup`)** —
+    `OneDriveFilePicker` opens a dedicated `window.open("/msal-redirect.html")` window and waits for
+    a token via `BroadcastChannel("datanexus-msal")`. The auth window calls `loginRedirect` →
+    Microsoft/corporate SSO chain → redirects back to `msal-redirect.html` →
+    `handleRedirectPromise()` posts `{ type: "token", accessToken }` → window closes.
+    **Why not `acquireTokenPopup`?** It fails with `popup_window_error` in corporate Edge/Chrome
+    environments where the browser blocks MSAL's internally managed popup.
+    **Why not iframe silent auth as primary?** MSAL's hidden iframe calls `loginRedirect` inside an
+    iframe which fails with `block_iframe_reload`. Silent auth via `acquireTokenSilent` is still
+    attempted first (uses MSAL's internal iframe transparently); the redirect window only opens on
+    `InteractionRequiredAuthError`. Do not change this pattern.
+12. **`Microsoft.Extensions.AI.OpenAI` is pinned to `10.3.0`** — MAF 1.0.0-rc4 was compiled
+    against `Microsoft.Extensions.AI.Abstractions` 10.3.x. The type `FunctionApprovalRequestContent`
+    was removed in 10.4.0, causing a runtime `TypeLoadException` (`Could not load type
+    'Microsoft.Extensions.AI.FunctionApprovalRequestContent'`). **Do NOT upgrade this package**
+    until MAF ships a version whose dependency graph targets `Microsoft.Extensions.AI.Abstractions
+    >= 10.4.0`. The constraint is documented in a comment in `backend/DataNexus.csproj`.
 
 ### Future MAF Patterns (Adopt When Needed)
 

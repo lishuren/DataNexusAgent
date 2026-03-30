@@ -13,7 +13,12 @@
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-rc4" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc4" />
     <PackageReference Include="OpenAI" Version="2.*" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
+    <!--
+      PINNED at 10.3.0 — MAF 1.0.0-rc4 was compiled against Microsoft.Extensions.AI.Abstractions 10.3.x.
+      The type FunctionApprovalRequestContent was removed in 10.4.0, causing a runtime TypeLoadException.
+      Do NOT upgrade until MAF ships a version whose dependency graph targets >= 10.4.0.
+    -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.3.0" />
     <PackageReference Include="ClosedXML" Version="0.104.*" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.*" />
