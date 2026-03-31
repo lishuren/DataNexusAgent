@@ -1,17 +1,17 @@
 # DataNexus
 
-DataNexus is a multi-agent AI kernel for building, running, and sharing composable AI agents, pipelines, and markdown-based skills.
+DataNexus is a multi-agent AI kernel for building, running, and sharing composable AI agents, pipelines, and SKILL.md-based skills.
 
 It is a monorepo with:
 - `backend/` — .NET 10 minimal API, EF Core, PostgreSQL, Keycloak auth, GitHub Models inference
 - `frontend/` — React 19, TypeScript, Vite
-- `.github/skills/` — shared and user-authored markdown skills
+- `.github/skills/` — shared and user-authored SKILL.md packages
 
 ## Overview
 
 DataNexus separates three concerns:
 - `Agents` define behavior, execution mode, attached plugins, and UI schema.
-- `Skills` are markdown instructions injected into prompts at runtime.
+- `Skills` are file-backed `SKILL.md` packages exposed through Microsoft Agent Framework context providers.
 - `Pipelines` chain agents together for multi-step workflows.
 
 The backend supports both:
@@ -64,14 +64,15 @@ An agent includes:
 - ownership and visibility (`Private` or `Public`)
 
 ### Skills
-Skills are markdown documents injected into prompts at runtime.
+Skills are file-backed `SKILL.md` packages discovered from `.github/skills/` and exposed to agents through Microsoft Agent Framework skill context providers.
 
 They are used to:
 - encode domain instructions
 - standardize transformations
 - shape model output without changing code
 
-Skills are passive. They do not execute code and cannot invoke plugins.
+The current runtime uses `FileAgentSkillsProvider`, which advertises selected skills to the model and loads full skill content or static resources on demand.
+Skills are passive in the current product surface. They do not execute code and cannot invoke plugins.
 
 ### Pipelines
 Pipelines connect multiple agents in sequence.
@@ -79,6 +80,7 @@ Pipelines connect multiple agents in sequence.
 They support:
 - ordered execution by agent ID list
 - self-correction retries on schema mismatch
+- live streamed execution updates via NDJSON endpoints
 - publish / unpublish / clone flows
 
 ### Plugins
@@ -212,6 +214,7 @@ Features:
 - dynamic form rendering from agent UI schema
 - task execution
 - pipeline execution
+- live execution stream while runs are in progress
 - recent task history
 
 ### Agents
@@ -243,10 +246,13 @@ Features:
 
 Main route groups:
 - `/api/process`
+- `/api/process/stream`
 - `/api/process/pipeline`
+- `/api/process/pipeline/stream`
 - `/api/agents`
 - `/api/skills`
 - `/api/pipelines`
+- `/api/orchestrations/{id}/run/stream`
 - `/api/tasks`
 
 Typical resource actions:

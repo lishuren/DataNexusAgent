@@ -21,6 +21,7 @@ public static class SkillsEndpoints
             {
                 s.Id,
                 s.Name,
+                s.Description,
                 s.Instructions,
                 Scope = s.Scope.ToString(),
                 s.OwnerId,
@@ -36,6 +37,7 @@ public static class SkillsEndpoints
             {
                 s.Id,
                 s.Name,
+                s.Description,
                 s.Instructions,
                 Scope = s.Scope.ToString(),
                 s.OwnerId,

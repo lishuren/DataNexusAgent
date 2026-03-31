@@ -34,6 +34,12 @@ public sealed class OrchestrationEntity
     /// <summary>JSON array of <see cref="OrchestrationStep"/> objects.</summary>
     public string StepsJson { get; set; } = "[]";
 
+    /// <summary>Whether this orchestration is a structured list or a graph.</summary>
+    public OrchestrationWorkflowKind WorkflowKind { get; set; } = OrchestrationWorkflowKind.Structured;
+
+    /// <summary>Optional graph payload for DAG-style orchestrations.</summary>
+    public string? GraphJson { get; set; }
+
     public OrchestrationStatus Status { get; set; } = OrchestrationStatus.Draft;
 
     /// <summary>The model that generated the plan (e.g. "gpt-4o").</summary>
@@ -46,6 +52,20 @@ public sealed class OrchestrationEntity
     public bool EnableSelfCorrection { get; set; } = true;
 
     public int MaxCorrectionAttempts { get; set; } = 3;
+
+    /// <summary>How agents in this orchestration execute. Default is sequential.</summary>
+    public ExecutionMode ExecutionMode { get; set; } = ExecutionMode.Sequential;
+
+    /// <summary>
+    /// For <see cref="ExecutionMode.Handoff"/>: the step number of the triage agent that routes
+    /// to specialists. Must refer to a valid step. Defaults to step 1.
+    /// </summary>
+    public int TriageStepNumber { get; set; } = 1;
+
+    /// <summary>
+    /// For <see cref="ExecutionMode.GroupChat"/>: maximum number of chat turns before forced stop.
+    /// </summary>
+    public int GroupChatMaxIterations { get; set; } = 10;
 
     public SkillScope Scope { get; set; }
 
@@ -63,8 +83,13 @@ public sealed class OrchestrationEntity
     public OrchestrationDefinition ToDefinition() => new(
         Id, Name, Goal,
         JsonSerializer.Deserialize<List<OrchestrationStep>>(StepsJson) ?? [],
+        WorkflowKind,
+        string.IsNullOrWhiteSpace(GraphJson)
+            ? null
+            : JsonSerializer.Deserialize<OrchestrationGraph>(GraphJson),
         Status, PlannerModel, PlannerNotes,
         EnableSelfCorrection, MaxCorrectionAttempts,
+        ExecutionMode, TriageStepNumber, GroupChatMaxIterations,
         Scope, OwnerId, PublishedByUserId, ApprovedAt,
         CreatedAt, UpdatedAt);
 }
@@ -75,11 +100,16 @@ public sealed record OrchestrationDefinition(
     string Name,
     string Goal,
     IReadOnlyList<OrchestrationStep> Steps,
+    OrchestrationWorkflowKind WorkflowKind,
+    OrchestrationGraph? Graph,
     OrchestrationStatus Status,
     string? PlannerModel,
     string? PlannerNotes,
     bool EnableSelfCorrection,
     int MaxCorrectionAttempts,
+    ExecutionMode ExecutionMode,
+    int TriageStepNumber,
+    int GroupChatMaxIterations,
     SkillScope Scope,
     string? OwnerId,
     string? PublishedByUserId,

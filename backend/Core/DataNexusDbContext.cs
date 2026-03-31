@@ -64,6 +64,16 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
 
             entity.Property(e => e.MaxCorrectionAttempts)
                   .HasDefaultValue(3);
+
+            entity.Property(e => e.ExecutionMode)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .HasDefaultValue(ExecutionMode.Sequential);
+
+            entity.Property(e => e.ConcurrentAggregatorMode)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .HasDefaultValue(ConcurrentAggregatorMode.Concatenate);
         });
 
         modelBuilder.Entity<OrchestrationEntity>(entity =>
@@ -86,6 +96,24 @@ public sealed class DataNexusDbContext(DbContextOptions<DataNexusDbContext> opti
 
             entity.Property(e => e.MaxCorrectionAttempts)
                   .HasDefaultValue(3);
+
+            entity.Property(e => e.WorkflowKind)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .HasDefaultValue(OrchestrationWorkflowKind.Structured);
+
+            entity.Property(e => e.GraphJson);
+
+            entity.Property(e => e.ExecutionMode)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .HasDefaultValue(ExecutionMode.Sequential);
+
+            entity.Property(e => e.TriageStepNumber)
+                  .HasDefaultValue(1);
+
+            entity.Property(e => e.GroupChatMaxIterations)
+                  .HasDefaultValue(10);
         });
 
         modelBuilder.Entity<TaskHistoryEntity>(entity =>

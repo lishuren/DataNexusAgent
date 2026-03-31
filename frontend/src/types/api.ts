@@ -1,6 +1,7 @@
 export interface Skill {
   id: number;
   name: string;
+  description?: string;
   scope: "Public" | "Private";
   ownerId: string | null;
   publishedByUserId?: string | null;
@@ -46,6 +47,9 @@ export interface ProcessingRequest {
   parameters?: Record<string, string>;
 }
 
+export type ExecutionMode = "Sequential" | "Concurrent" | "Handoff" | "GroupChat";
+export type ConcurrentAggregatorMode = "Concatenate" | "First" | "Last";
+
 export interface PipelineRequest {
   name: string;
   agentIds: number[];
@@ -53,6 +57,9 @@ export interface PipelineRequest {
   outputDestination: string;
   enableSelfCorrection?: boolean;
   maxCorrectionAttempts?: number;
+  executionMode?: ExecutionMode;
+  concurrentAggregatorMode?: ConcurrentAggregatorMode;
+  groupChatMaxIterations?: number;
   parameters?: Record<string, string>;
 }
 
@@ -84,12 +91,22 @@ export interface ProcessingResult {
   debug?: ProcessingDebugInfo;
 }
 
+export interface ProcessingStreamEvent {
+  type: "status" | "chunk" | "result";
+  message?: string;
+  text?: string;
+  sourceId?: string;
+  result?: ProcessingResult;
+}
+
 export interface Pipeline {
   id: number;
   name: string;
   agentIds: number[];
   enableSelfCorrection: boolean;
   maxCorrectionAttempts: number;
+  executionMode: ExecutionMode;
+  concurrentAggregatorMode: ConcurrentAggregatorMode;
   scope: "Public" | "Private";
   ownerId: string | null;
   publishedByUserId?: string | null;
@@ -119,6 +136,8 @@ export type OrchestrationStatus =
   | "Completed"
   | "Failed";
 
+export type OrchestrationWorkflowKind = "Structured" | "Graph";
+
 export interface OrchestrationStep {
   stepNumber: number;
   title: string;
@@ -130,16 +149,46 @@ export interface OrchestrationStep {
   parameters: Record<string, string> | null;
 }
 
+export interface OrchestrationGraphNode {
+  id: string;
+  displayOrder: number;
+  title: string;
+  description: string;
+  agentId: number;
+  agentName: string;
+  isEdited: boolean;
+  promptOverride: string | null;
+  parameters: Record<string, string> | null;
+  positionX: number;
+  positionY: number;
+}
+
+export interface OrchestrationGraphEdge {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+}
+
+export interface OrchestrationGraph {
+  nodes: OrchestrationGraphNode[];
+  edges: OrchestrationGraphEdge[];
+}
+
 export interface Orchestration {
   id: number;
   name: string;
   goal: string;
   steps: OrchestrationStep[];
+  workflowKind: OrchestrationWorkflowKind;
+  graph: OrchestrationGraph | null;
   status: OrchestrationStatus;
   plannerModel: string | null;
   plannerNotes: string | null;
   enableSelfCorrection: boolean;
   maxCorrectionAttempts: number;
+  executionMode: ExecutionMode;
+  triageStepNumber: number;
+  groupChatMaxIterations: number;
   scope: "Public" | "Private";
   ownerId: string | null;
   publishedByUserId: string | null;

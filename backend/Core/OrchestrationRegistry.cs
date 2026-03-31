@@ -68,11 +68,16 @@ public sealed class OrchestrationRegistry(
         string userId,
         string name,
         string goal,
-        IReadOnlyList<OrchestrationStep> steps,
+        IReadOnlyList<OrchestrationStep>? steps,
         string? plannerModel = null,
         string? plannerNotes = null,
         bool enableSelfCorrection = true,
         int maxCorrectionAttempts = 3,
+        OrchestrationWorkflowKind workflowKind = OrchestrationWorkflowKind.Structured,
+        OrchestrationGraph? graph = null,
+        ExecutionMode executionMode = ExecutionMode.Sequential,
+        int triageStepNumber = 1,
+        int groupChatMaxIterations = 10,
         CancellationToken ct = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -80,16 +85,27 @@ public sealed class OrchestrationRegistry(
 
         await EnsureNameAvailableAsync(db, userId, name, null, ct);
 
+        var (storedSteps, storedGraph) = NormalizeWorkflowData(steps, workflowKind, graph);
+        var agentNames = await GetAccessibleAgentNamesAsync(
+            db, userId, GetReferencedAgentIds(storedSteps, storedGraph), ct);
+        storedSteps = ApplyAgentNames(storedSteps, agentNames);
+        storedGraph = storedGraph is null ? null : ApplyAgentNames(storedGraph, agentNames);
+
         var entity = new OrchestrationEntity
         {
             Name = name,
             Goal = goal,
-            StepsJson = JsonSerializer.Serialize(steps),
+            StepsJson = JsonSerializer.Serialize(storedSteps),
+            WorkflowKind = workflowKind,
+            GraphJson = storedGraph is null ? null : JsonSerializer.Serialize(storedGraph),
             Status = OrchestrationStatus.Draft,
             PlannerModel = plannerModel,
             PlannerNotes = plannerNotes,
             EnableSelfCorrection = enableSelfCorrection,
             MaxCorrectionAttempts = Math.Clamp(maxCorrectionAttempts, 1, 10),
+            ExecutionMode = executionMode,
+            TriageStepNumber = Math.Clamp(triageStepNumber, 1, Math.Max(1, storedSteps.Count)),
+            GroupChatMaxIterations = Math.Clamp(groupChatMaxIterations, 2, 50),
             Scope = SkillScope.Private,
             OwnerId = userId,
         };
@@ -98,8 +114,8 @@ public sealed class OrchestrationRegistry(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "[User: {UserId}] Created orchestration '{Name}' ({StepCount} steps)",
-            userId, name, steps.Count);
+            "[User: {UserId}] Created orchestration '{Name}' ({Kind}, {Mode}, {StepCount} steps)",
+            userId, name, workflowKind, executionMode, storedSteps.Count);
 
         return entity.ToDefinition();
     }
@@ -110,9 +126,14 @@ public sealed class OrchestrationRegistry(
         string userId,
         int id,
         string name,
-        IReadOnlyList<OrchestrationStep> steps,
+        IReadOnlyList<OrchestrationStep>? steps,
         bool enableSelfCorrection,
         int maxCorrectionAttempts,
+        OrchestrationWorkflowKind workflowKind = OrchestrationWorkflowKind.Structured,
+        OrchestrationGraph? graph = null,
+        ExecutionMode executionMode = ExecutionMode.Sequential,
+        int triageStepNumber = 1,
+        int groupChatMaxIterations = 10,
         CancellationToken ct = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -126,10 +147,21 @@ public sealed class OrchestrationRegistry(
 
         await EnsureNameAvailableAsync(db, userId, name, id, ct);
 
+        var (storedSteps, storedGraph) = NormalizeWorkflowData(steps, workflowKind, graph);
+        var agentNames = await GetAccessibleAgentNamesAsync(
+            db, userId, GetReferencedAgentIds(storedSteps, storedGraph), ct);
+        storedSteps = ApplyAgentNames(storedSteps, agentNames);
+        storedGraph = storedGraph is null ? null : ApplyAgentNames(storedGraph, agentNames);
+
         entity.Name = name;
-        entity.StepsJson = JsonSerializer.Serialize(steps);
+        entity.StepsJson = JsonSerializer.Serialize(storedSteps);
+        entity.WorkflowKind = workflowKind;
+        entity.GraphJson = storedGraph is null ? null : JsonSerializer.Serialize(storedGraph);
         entity.EnableSelfCorrection = enableSelfCorrection;
         entity.MaxCorrectionAttempts = Math.Clamp(maxCorrectionAttempts, 1, 10);
+        entity.ExecutionMode = executionMode;
+        entity.TriageStepNumber = Math.Clamp(triageStepNumber, 1, Math.Max(1, storedSteps.Count));
+        entity.GroupChatMaxIterations = Math.Clamp(groupChatMaxIterations, 2, 50);
         entity.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
@@ -314,11 +346,16 @@ public sealed class OrchestrationRegistry(
             Name = newName,
             Goal = source.Goal,
             StepsJson = source.StepsJson,
+            WorkflowKind = source.WorkflowKind,
+            GraphJson = source.GraphJson,
             Status = OrchestrationStatus.Draft,
             PlannerModel = source.PlannerModel,
             PlannerNotes = source.PlannerNotes,
             EnableSelfCorrection = source.EnableSelfCorrection,
             MaxCorrectionAttempts = source.MaxCorrectionAttempts,
+            ExecutionMode = source.ExecutionMode,
+            TriageStepNumber = source.TriageStepNumber,
+            GroupChatMaxIterations = source.GroupChatMaxIterations,
             Scope = SkillScope.Private,
             OwnerId = userId,
         };
@@ -378,5 +415,74 @@ public sealed class OrchestrationRegistry(
 
         if (exists)
             throw new ResourceConflictException($"Orchestration name '{name}' already exists.");
+    }
+
+    private static (IReadOnlyList<OrchestrationStep> Steps, OrchestrationGraph? Graph) NormalizeWorkflowData(
+        IReadOnlyList<OrchestrationStep>? steps,
+        OrchestrationWorkflowKind workflowKind,
+        OrchestrationGraph? graph)
+    {
+        if (workflowKind == OrchestrationWorkflowKind.Graph)
+        {
+            var normalizedGraph = OrchestrationGraphRules.NormalizeGraph(graph);
+            return (normalizedGraph.ToStructuredSteps(), normalizedGraph);
+        }
+
+        if (steps is not { Count: >= 1 })
+            throw new InvalidOperationException("At least one step is required.");
+
+        return (OrchestrationGraphRules.NormalizeSteps(steps), null);
+    }
+
+    private static IReadOnlyList<int> GetReferencedAgentIds(
+        IReadOnlyList<OrchestrationStep> steps,
+        OrchestrationGraph? graph)
+    {
+        return graph is not null
+            ? graph.Nodes.Select(node => node.AgentId).Distinct().ToList()
+            : steps.Select(step => step.AgentId).Distinct().ToList();
+    }
+
+    private static async Task<Dictionary<int, string>> GetAccessibleAgentNamesAsync(
+        DataNexusDbContext db,
+        string userId,
+        IReadOnlyList<int> agentIds,
+        CancellationToken ct)
+    {
+        var agents = await db.Agents
+            .Where(agent => agentIds.Contains(agent.Id) &&
+                (agent.Scope == SkillScope.Public || agent.OwnerId == userId))
+            .Select(agent => new { agent.Id, agent.Name })
+            .ToListAsync(ct);
+
+        var nameLookup = agents.ToDictionary(agent => agent.Id, agent => agent.Name);
+        var missingIds = agentIds.Where(agentId => !nameLookup.ContainsKey(agentId)).ToList();
+
+        if (missingIds.Count > 0)
+            throw new InvalidOperationException(
+                $"Orchestration references unknown or inaccessible agents: {string.Join(", ", missingIds)}.");
+
+        return nameLookup;
+    }
+
+    private static IReadOnlyList<OrchestrationStep> ApplyAgentNames(
+        IReadOnlyList<OrchestrationStep> steps,
+        IReadOnlyDictionary<int, string> agentNames)
+    {
+        return steps
+            .Select(step => step with { AgentName = agentNames[step.AgentId] })
+            .ToList();
+    }
+
+    private static OrchestrationGraph ApplyAgentNames(
+        OrchestrationGraph graph,
+        IReadOnlyDictionary<int, string> agentNames)
+    {
+        return graph with
+        {
+            Nodes = graph.Nodes
+                .Select(node => node with { AgentName = agentNames[node.AgentId] })
+                .ToList(),
+        };
     }
 }

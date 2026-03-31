@@ -24,5 +24,5 @@ public sealed class SkillEntity
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    public SkillDefinition ToDefinition() => new(Id, Name, Instructions, Scope, OwnerId, PublishedByUserId);
+    public SkillDefinition ToDefinition() => new(Id, Name, Name, Instructions, Scope, OwnerId, PublishedByUserId);
 }

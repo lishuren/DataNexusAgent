@@ -46,9 +46,9 @@ graph TB
         subgraph "DataNexus Engine  (Microsoft Agent Framework)"
             direction LR
             AF["AgentFactory\n(ChatClientAgent · skills · middleware)"]
-            SingleRun["RunSingleAgent\n(plugins → AIAgent.RunAsync → plugins)"]
-            Pipeline["RunPipeline\n(BuildSequential → InProcessExecution)"]
-            Orchestration["RunOrchestration\n(Planner → Approve → BuildSequential)"]
+            SingleRun["RunSingleAgent\n(AIAgent.RunAsync / RunStreamingAsync)"]
+            Pipeline["RunPipeline\n(Build* → RunAsync / RunStreamingAsync)"]
+            Orchestration["RunOrchestration\n(Planner → Approve → Structured or Graph Workflow)"]
             SelfCorrect["Self-Correction\n(workflow retry on error)"]
             AF --> SingleRun
             AF --> Pipeline
@@ -64,7 +64,7 @@ graph TB
     end
 
     subgraph "Data Layer"
-        PG[("🐘 PostgreSQL\nagents + skills tables")]
+        PG[("🐘 PostgreSQL\nagents + workflow tables")]
         ExtAPI["External API\n(HTTPS only)"]
     end
 
@@ -131,12 +131,16 @@ graph TB
 - **DataNexusEngine**: Dynamic agent orchestrator built on **Microsoft Agent Framework** (v1.0.0-rc4). Supports:
   - **AgentFactory** — creates `ChatClientAgent` (AF's `IChatClient`-backed `AIAgent`) from database-stored
     agent definitions. Resolves skills, builds instructions, and wraps with AF audit-logging middleware.
-  - **Single-agent execution** — `AgentFactory.CreateAgentAsync()` → `AIAgent.RunAsync()`,
-    with deterministic plugin sandwich (InputProcessor → LLM → OutputIntegrator).
+  - **Single-agent execution** — uses the same AF middleware path as workflows via
+    `AgentFactory.CreateRuntimeAgentAsync()` → `AIAgent.RunAsync()` / `AIAgent.RunStreamingAsync()`,
+    with deterministic plugin middleware (InputProcessor → LLM → OutputIntegrator).
   - **External agent execution** — `ExternalAgentAdapter` wraps `ExternalProcessRunner` as an AF `AIAgent`,
     enabling external CLI/script agents to participate in AF sequential workflows.
-  - **Pipeline execution** — uses `AgentWorkflowBuilder.BuildSequential()` + `InProcessExecution.RunAsync()`
-    to chain agents. Each agent's plugins are embedded as AF middleware for self-contained execution.
+  - **Pipeline execution** — uses `AgentWorkflowBuilder.BuildSequential()` + `InProcessExecution.RunAsync()` /
+    `InProcessExecution.RunStreamingAsync()` to chain agents. Each agent's plugins are embedded as AF middleware for
+    self-contained execution.
+  - **Streaming execution** — `/api/process/stream`, `/api/process/pipeline/stream`, and
+    `/api/orchestrations/{id}/run/stream` surface AF response updates to the React UI as NDJSON event streams.
   - **Self-correction** — on plugin error or schema mismatch, retries the entire workflow (up to 3 attempts).
   - **Default mode** — if no `AgentId` specified, falls back to Analyst → Integrator workflow via `BuildSequential`.
 - **External Agent Runtime** (`ExternalProcessRunner`):
@@ -147,21 +151,25 @@ graph TB
   - Config section: `ExternalAgents` in `appsettings.json`.
 - **Orchestrations** (LLM-planned workflows): Stored in PostgreSQL (`orchestrations` table) via EF Core.
   `PlannerService` uses a MAF `ChatClientAgent` to decompose a user goal into ordered agent steps.
+  Draft orchestrations can remain as structured workflows or be converted into a manual DAG graph.
   The plan is saved as a `Draft` and requires explicit user approval before execution.
   - **Status lifecycle**: `Draft → Approved → Running → Completed/Failed` or `Draft → Rejected`.
     Users can also `ResetToDraft` to revise a rejected or failed plan.
-  - **PlannerService**: Creates a `ChatClientAgent` with a system prompt containing agent catalog +
-    decomposition rules, wrapped with AF audit-logging middleware. Parses the LLM response into
-    `OrchestrationStep` objects, validating agent IDs against the registry.
-  - **Approval gate**: Only `Approved` orchestrations can execute. The frontend shows the plan steps,
-    lets users swap agents, override prompts, remove steps, then approve or reject.
+  - **PlannerService**: Creates a `ChatClientAgent` with AF audit-logging middleware, requests
+    typed structured output via `RunAsync<T>()`, and injects the live agent catalog plus execution-mode
+    guidance through an `AIContextProvider` instead of hand-stitching the full planner prompt.
+  - **Approval gate**: Only `Approved` orchestrations can execute. The frontend shows the draft,
+    lets users swap agents, override prompts, remove steps, or switch the draft into a graph editor
+    for branching DAG flows before approval or rejection.
   - **Execution**: `RunOrchestrationAsync` resolves agent definitions (with any prompt overrides),
-    builds AF agents via `CreateOrchestrationStepAgentAsync`, chains them with
-    `AgentWorkflowBuilder.BuildSequential`, and executes via `InProcessExecution.RunAsync`.
+    builds AF agents via `CreateOrchestrationStepAgentAsync`, and executes either the structured
+    MAF builders (`BuildSequential`, `BuildConcurrent`, handoff, group chat) or a DAG built with
+    `WorkflowBuilder` + `AddEdge()` / `AddFanInBarrierEdge()` for graph orchestrations. The same definitions
+    also run through `InProcessExecution.RunStreamingAsync()` for live orchestration output.
   - **Marketplace**: Only `Approved` + `Private` orchestrations can be published. Users can clone
     public orchestrations into their own workspace.
   - REST API: `POST /api/orchestrations/plan`, `GET/PUT/DELETE /api/orchestrations/{id}`,
-    `POST .../approve`, `POST .../reject`, `POST .../reset`, `POST .../run`,
+    `POST .../approve`, `POST .../reject`, `POST .../reset`, `POST .../run`, `POST .../run/stream`,
     `POST .../publish`, `POST .../unpublish`, `POST .../clone`.
 - **Pipelines**: Stored in PostgreSQL (`pipelines` table) via EF Core. `PipelineRegistry` provides
   full CRUD (list, get, create, update, delete, publish). Each pipeline has:
@@ -171,9 +179,10 @@ graph TB
   - `MaxCorrectionAttempts` — cap on retries (default 3).
   - `Scope` — `Public` or `Private`; publishable to marketplace.
   - REST API: `GET/POST/PUT/DELETE /api/pipelines`, `POST /api/pipelines/{id}/publish`.
-- **Skills**: Stored in PostgreSQL (`skills` table) via EF Core. `SkillRegistry` queries the
-  database and injects instructions into agent system prompts at runtime.
-  Built-in skills from `.github/skills/public/` are seeded into the DB on startup.
+- **Skills**: Stored as file-backed `SKILL.md` packages under `.github/skills/public/` and
+  `.github/skills/user/`. `SkillRegistry` manages package discovery and lifecycle on disk, and
+  `AgentFactory` attaches MAF `FileAgentSkillsProvider` instances through `AIContextProviders`
+  so skills are advertised and loaded on demand instead of being stitched directly into prompts.
 - **Plugins**: C# classes that perform real I/O before or after the LLM call. Registered per-agent
   via the `Plugins` comma-separated field. Two built-in plugins:
   - `InputProcessor` — runs **before** the LLM: parses Excel / CSV / JSON, downloads URLs.
@@ -185,14 +194,14 @@ graph TB
 | Aspect        | Skills                              | Plugins                                  |
 | ------------- | ----------------------------------- | ---------------------------------------- |
 | **What**      | Markdown text                       | C# code (implements `IPlugin`)           |
-| **When**      | Injected into system prompt before LLM call | Execute before/after the LLM call   |
+| **When**      | Advertised via MAF skill context and loaded on demand | Execute before/after the LLM call |
 | **Purpose**   | Shape *how the LLM thinks*          | Give the agent *ability to act*          |
 | **Authored by** | Any user (markdown)               | Developers (backend code)                |
 | **Side effects** | None — passive knowledge         | Yes — file I/O, HTTP, database writes    |
 
 Execution flow per LLM agent:
 ```
-InputProcessor plugin (optional) → LLM (with skill-enriched prompt) → OutputIntegrator plugin (optional)
+InputProcessor plugin (optional) → LLM (with provider-backed skill context) → OutputIntegrator plugin (optional)
 ```
 
 #### File Compression
@@ -296,8 +305,9 @@ Example (Cloud-enabled agent with OneDrive):
 - Use `PluginNames` constants (not string literals) when referencing plugin names.
 - Use `PluginError` helpers (not magic `[PLUGIN_ERROR]` strings) for error signaling in AF middleware.
 - **Streaming middleware rule**: In `AsBuilder().Use()` middleware, implement `runStreamingFunc`
-  with a pass-through when middleware only observes (e.g. logging). Pass `null` when middleware
-  transforms messages or overrides execution — MAF will auto-derive streaming via the non-streaming path.
+  with a pass-through when middleware only observes (e.g. logging). When middleware transforms messages or
+  performs post-processing, prefer a real streaming implementation that forwards inner updates and applies its
+  extra logic before/after the stream. Only pass `null` when streaming truly must collapse to buffered execution.
 
 ### TypeScript (Frontend)
 
@@ -397,15 +407,16 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
 7. **External agent runtime** — users can register CLI tools, Python scripts, or Node programs
    as agents. The engine executes them as child processes with a stdin/stdout JSON protocol,
    guarded by a command allowlist, timeout cap, and working-directory allowlist.
-8. **Skills ≠ Plugins (strict separation)** — skills are passive markdown injected into prompts;
+8. **Skills ≠ Plugins (strict separation)** — skills are passive `SKILL.md` packages surfaced through MAF context providers;
    plugins are executable C# code that performs I/O. Skills cannot invoke plugins. This is a
    deliberate security boundary: skill authors (any user) must not be able to trigger privileged
    actions (API calls, DB writes) that only agent-configured plugins should perform.
 9. **LLM-planned orchestrations with approval gate** — `PlannerService` (a MAF `ChatClientAgent`)
    decomposes user goals into agent steps. Plans are saved as `Draft` and require explicit user
    approval before execution. Users can swap agents, override prompts, and remove steps.
-   Approved orchestrations execute via `AgentWorkflowBuilder.BuildSequential` + `InProcessExecution.RunAsync`,
-   fully leveraging MAF workflow primitives. Published orchestrations are shareable via the marketplace.
+  Planner runs use MAF structured output plus `AIContextProvider`-supplied planner context, and approved
+  orchestrations execute via `AgentWorkflowBuilder.Build*`, `WorkflowBuilder`, and `InProcessExecution`
+  primitives. Published orchestrations are shareable via the marketplace.
 10. **MAF-first architecture** — all agent construction, middleware, workflow orchestration, and
     execution must use Microsoft Agent Framework primitives. No homebrew agent runners, custom
     pipeline loops, or bespoke middleware chains. When MAF ships new capabilities (e.g.,
@@ -432,20 +443,31 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
 
 ### Future MAF Patterns (Adopt When Needed)
 
-The following MAF primitives are available in `Microsoft.Agents.AI.Workflows` 1.0.0-rc4 but not yet
-used in DataNexus. Adopt them as product needs arise rather than pre-building:
+The following MAF primitives are available in `Microsoft.Agents.AI.Workflows` 1.0.0-rc4. The first five
+are now implemented; the rest remain as adopt-when-needed:
 
-- **`AgentWorkflowBuilder.BuildConcurrent(agents)`** — parallel agent execution (fan-out/fan-in).
-  Use when pipeline steps are independent and can run simultaneously.
+**Implemented:**
+- **`AgentWorkflowBuilder.BuildConcurrent(agents, aggregator)`** — parallel agent execution (fan-out/fan-in).
+  Activated via `executionMode: "Concurrent"` on pipelines/orchestrations. Aggregator mode controls merging:
+  `Concatenate` (default, joins all), `First`, `Last`.
+- **`InProcessExecution.RunStreamingAsync()`** — streaming pipeline/orchestration execution surfaced to the
+  frontend through NDJSON endpoints. The UI consumes `StreamingRun.WatchStreamAsync()` output and renders live
+  agent/orchestration transcripts.
 - **`AgentWorkflowBuilder.CreateHandoffBuilderWith(triage).WithHandoffs(...).Build()`** — agent
-  handoff patterns where a triage agent routes to specialists. Useful for routing-style orchestrations.
+  handoff. Activated via `executionMode: "Handoff"`. The step at `triageStepNumber` (1-based, default 1)
+  acts as the triage that routes via LLM tool calls to all other steps as specialists. Each specialist
+  can also escalate back to triage, enabling feedback loops.
 - **`AgentWorkflowBuilder.CreateGroupChatBuilderWith(manager).AddParticipants(...).Build()`** —
-  multi-agent group chat with configurable turn management (e.g. `RoundRobinGroupChatManager`).
-- **`WorkflowBuilder`** — graph-based workflow construction with `AddEdge()` for arbitrary DAGs,
-  conditional routing, and loops. More flexible than `BuildSequential` for non-linear flows.
-- **`InProcessExecution.RunStreamingAsync()`** — streaming workflow execution returning a
-  `StreamingRun` with `TurnToken`, `WatchStreamAsync()`, `AgentResponseUpdateEvent`, and
-  `WorkflowOutputEvent` for real-time event streaming to clients.
+  round-robin group chat. Activated via `executionMode: "GroupChat"`. All pipeline/orchestration steps
+  participate. `groupChatMaxIterations` (default 10, capped 2–50) controls termination.
+- **`WorkflowBuilder`** — graph-based workflow construction for manual DAG orchestrations.
+  Activated via `workflowKind: "Graph"` on orchestrations. V1 supports a single start node,
+  branching, joins via `AddFanInBarrierEdge`, and a single terminal node. Cycles and planner-generated
+  graphs are intentionally out of scope for now.
+- **Self-correction retry** — applies to `Sequential` and `Concurrent` modes only. Handoff and GroupChat
+  use their own internal routing/iteration logic so whole-workflow retry does not apply.
+
+**Not yet used (adopt when needed):**
 - **`AgentSkillsProvider` + `AIContextProviders`** — MAF's native progressive-disclosure skill
   system (SKILL.md files with `load_skill`, `read_skill_resource`, `run_skill_script` tools).
   Evaluate for replacing the current skill injection approach when MAF's skill model stabilizes.

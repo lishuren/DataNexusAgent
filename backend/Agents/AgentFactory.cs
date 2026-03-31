@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using DataNexus.Core;
 using DataNexus.Identity;
@@ -13,6 +14,25 @@ public sealed record CreateAgentResult(
     AIAgent Agent,
     string BuiltInstructions,
     IReadOnlyList<SkillDefinition> ResolvedSkills);
+
+public sealed class AgentExecutionTrace
+{
+    public bool InputPluginRan { get; set; }
+    public string? ParsedInput { get; set; }
+    public string? InputPluginErrorCode { get; set; }
+    public string? InputPluginErrorMessage { get; set; }
+    public string? RawLlmResponse { get; set; }
+    public bool OutputPluginRan { get; set; }
+    public string? OutputPluginResult { get; set; }
+    public string? OutputPluginErrorCode { get; set; }
+    public string? OutputPluginErrorMessage { get; set; }
+}
+
+public sealed record CreateRuntimeAgentResult(
+    AIAgent Agent,
+    string BuiltInstructions,
+    IReadOnlyList<SkillDefinition> ResolvedSkills,
+    AgentExecutionTrace Trace);
 
 /// <summary>
 /// Creates Microsoft Agent Framework <see cref="ChatClientAgent"/> instances from
@@ -35,21 +55,31 @@ public sealed class AgentFactory(
         UserContext user,
         CancellationToken ct = default)
     {
-        // 1. Resolve skills for this agent & user
         var skills = agentDef.SkillNames.Count > 0
             ? await skillRegistry.GetSkillsForUserAsync(user.UserId, ct, [.. agentDef.SkillNames])
-            : await skillRegistry.GetSkillsForUserAsync(user.UserId, ct);
+            : [];
 
-        // 2. Build the full instructions (system prompt + skill text)
-        var instructions = BuildInstructions(agentDef.SystemPrompt, skills);
+        var instructions = agentDef.SystemPrompt;
 
-        // 3. Create the ChatClientAgent (AF's IChatClient-backed AIAgent)
+        var contextProviders = skills.Count > 0
+            ? BuildSkillContextProviders(skills)
+            : null;
+
         var agent = new ChatClientAgent(
             chatClient,
-            name: agentDef.Name,
-            instructions: instructions);
+            new ChatClientAgentOptions
+            {
+                Name = agentDef.Name,
+                Description = agentDef.Description,
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = instructions,
+                },
+                AIContextProviders = contextProviders,
+            },
+            loggerFactory,
+            services: null);
 
-        // 4. Wrap with audit-logging middleware
         var logger = loggerFactory.CreateLogger($"Agent.{agentDef.Name}");
         var userId = user.UserId;
 
@@ -70,27 +100,6 @@ public sealed class AgentFactory(
             .Build();
 
         return new CreateAgentResult(builtAgent, instructions, skills);
-    }
-
-    /// <summary>
-    /// Builds the full instruction text by appending skill definitions to the agent's
-    /// base system prompt.  This is the text that becomes the ChatClientAgent's instructions.
-    /// </summary>
-    internal static string BuildInstructions(string agentPrompt, IReadOnlyList<SkillDefinition> skills)
-    {
-        if (skills.Count == 0) return agentPrompt;
-
-        var sb = new StringBuilder(agentPrompt);
-        sb.AppendLine().AppendLine("## Loaded Skills");
-
-        foreach (var skill in skills)
-        {
-            sb.AppendLine($"### {skill.Name} ({skill.Scope})");
-            sb.AppendLine(skill.Instructions);
-            sb.AppendLine();
-        }
-
-        return sb.ToString();
     }
 
     /// <summary>
@@ -134,61 +143,268 @@ public sealed class AgentFactory(
     {
         var baseAgent = await CreateAnyAgentAsync(agentDef, user, ct);
 
+        return AttachPluginMiddleware(
+            baseAgent,
+            agentDef,
+            user.UserId,
+            inputPlugin,
+            outputPlugin,
+            parameters,
+            trace: null);
+    }
+
+    /// <summary>
+    /// Creates an AF runtime-ready LLM agent with plugin middleware embedded and execution trace capture.
+    /// Used by single-agent execution so the engine can run everything through AF while still
+    /// returning detailed debug information.
+    /// </summary>
+    public async Task<CreateRuntimeAgentResult> CreateRuntimeAgentAsync(
+        AgentDefinition agentDef,
+        UserContext user,
+        InputProcessorPlugin inputPlugin,
+        OutputIntegratorPlugin outputPlugin,
+        IReadOnlyDictionary<string, string>? parameters,
+        string? promptOverride = null,
+        CancellationToken ct = default)
+    {
+        var effectiveDef = promptOverride is not null
+            ? agentDef with { SystemPrompt = promptOverride }
+            : agentDef;
+
+        var baseResult = await CreateAgentAsync(effectiveDef, user, ct);
+        var trace = new AgentExecutionTrace();
+
+        var runtimeAgent = AttachPluginMiddleware(
+            baseResult.Agent,
+            effectiveDef,
+            user.UserId,
+            inputPlugin,
+            outputPlugin,
+            parameters,
+            trace);
+
+        return new CreateRuntimeAgentResult(
+            runtimeAgent,
+            baseResult.BuiltInstructions,
+            baseResult.ResolvedSkills,
+            trace);
+    }
+
+    private static AIAgent AttachPluginMiddleware(
+        AIAgent baseAgent,
+        AgentDefinition agentDef,
+        string userId,
+        InputProcessorPlugin inputPlugin,
+        OutputIntegratorPlugin outputPlugin,
+        IReadOnlyDictionary<string, string>? parameters,
+        AgentExecutionTrace? trace)
+    {
         var hasInput = agentDef.PluginNames.Contains(PluginNames.InputProcessor);
         var hasOutput = agentDef.PluginNames.Contains(PluginNames.OutputIntegrator);
 
         if (!hasInput && !hasOutput)
             return baseAgent;
 
-        var userId = user.UserId;
-
         return baseAgent.AsBuilder()
             .Use(
                 runFunc: async (messages, session, options, inner, cancellationToken) =>
                 {
-                    var msgList = messages.ToList();
+                    var (msgList, inputErrorResponse) = await ApplyInputPluginAsync(
+                        messages,
+                        hasInput,
+                        inputPlugin,
+                        userId,
+                        parameters,
+                        trace,
+                        cancellationToken);
 
-                    // Pre-LLM: InputProcessor plugin
-                    if (hasInput)
-                    {
-                        var lastUser = msgList.LastOrDefault(m => m.Role == ChatRole.User);
-                        var inputText = lastUser?.Text ?? string.Empty;
-                        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
-                        var ctx = new PluginContext(userId, inputText, Metadata: paramDict);
-                        var result = await inputPlugin.ExecuteAsync(ctx, cancellationToken);
-                        if (!result.Success)
-                            return new AgentResponse([new ChatMessage(ChatRole.Assistant,
-                            PluginError.Format($"Input: {result.ErrorMessage}"))]);
-                        if (lastUser is not null)
-                        {
-                            var idx = msgList.IndexOf(lastUser);
-                            msgList[idx] = new ChatMessage(ChatRole.User, result.Output);
-                        }
-                    }
+                    if (inputErrorResponse is not null)
+                        return inputErrorResponse;
 
                     var response = await inner.RunAsync(msgList, session, options, cancellationToken);
 
-                    // Post-LLM: OutputIntegrator plugin
-                    if (hasOutput)
-                    {
-                        var paramDict2 = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
-                        var outCtx = new PluginContext(
-                            userId, response.Text ?? string.Empty,
-                            paramDict2?.GetValueOrDefault("Schema"),
-                            paramDict2);
-                        var outResult = await outputPlugin.ExecuteAsync(outCtx, cancellationToken);
-                        if (!outResult.Success)
-                            return new AgentResponse([new ChatMessage(ChatRole.Assistant,
-                                PluginError.Format(outResult.ErrorCode ?? "ERROR", outResult.ErrorMessage ?? "Unknown error"))]);
-                    }
+                    if (trace is not null)
+                        trace.RawLlmResponse = response.Text ?? string.Empty;
+
+                    var outputErrorResponse = await ApplyOutputPluginAsync(
+                        response.Text ?? string.Empty,
+                        hasOutput,
+                        outputPlugin,
+                        userId,
+                        parameters,
+                        trace,
+                        cancellationToken);
+
+                    if (outputErrorResponse is not null)
+                        return outputErrorResponse;
 
                     return response;
                 },
-                // Middleware transforms messages (InputProcessor/OutputIntegrator),
-                // so pass null to let MAF auto-derive streaming via the non-streaming path.
-                runStreamingFunc: null)
+                runStreamingFunc: (messages, session, options, inner, cancellationToken) =>
+                    RunStreamingWithPluginsAsync(
+                        messages,
+                        session,
+                        options,
+                        inner,
+                        hasInput,
+                        hasOutput,
+                        inputPlugin,
+                        outputPlugin,
+                        userId,
+                        parameters,
+                        trace,
+                        cancellationToken))
             .Build();
     }
+
+    private static async Task<(List<ChatMessage> Messages, AgentResponse? ErrorResponse)> ApplyInputPluginAsync(
+        IEnumerable<ChatMessage> messages,
+        bool hasInput,
+        InputProcessorPlugin inputPlugin,
+        string userId,
+        IReadOnlyDictionary<string, string>? parameters,
+        AgentExecutionTrace? trace,
+        CancellationToken cancellationToken)
+    {
+        var msgList = messages.ToList();
+
+        if (!hasInput)
+            return (msgList, null);
+
+        if (trace is not null)
+            trace.InputPluginRan = true;
+
+        var lastUser = msgList.LastOrDefault(m => m.Role == ChatRole.User);
+        var inputText = lastUser?.Text ?? string.Empty;
+        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var ctx = new PluginContext(userId, inputText, Metadata: paramDict);
+        var result = await inputPlugin.ExecuteAsync(ctx, cancellationToken);
+
+        if (!result.Success)
+        {
+            if (trace is not null)
+            {
+                trace.InputPluginErrorCode = result.ErrorCode ?? "PARSE_ERROR";
+                trace.InputPluginErrorMessage = result.ErrorMessage ?? "Unknown error";
+            }
+
+            return (msgList, CreatePluginErrorResponse(
+                PluginError.Format($"Input: {result.ErrorMessage}")));
+        }
+
+        if (trace is not null)
+            trace.ParsedInput = result.Output;
+
+        if (lastUser is not null)
+        {
+            var idx = msgList.IndexOf(lastUser);
+            msgList[idx] = new ChatMessage(ChatRole.User, result.Output);
+        }
+
+        return (msgList, null);
+    }
+
+    private static async Task<AgentResponse?> ApplyOutputPluginAsync(
+        string responseText,
+        bool hasOutput,
+        OutputIntegratorPlugin outputPlugin,
+        string userId,
+        IReadOnlyDictionary<string, string>? parameters,
+        AgentExecutionTrace? trace,
+        CancellationToken cancellationToken)
+    {
+        if (!hasOutput)
+            return null;
+
+        if (trace is not null)
+            trace.OutputPluginRan = true;
+
+        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var outCtx = new PluginContext(
+            userId,
+            responseText,
+            paramDict?.GetValueOrDefault("Schema"),
+            paramDict);
+        var outResult = await outputPlugin.ExecuteAsync(outCtx, cancellationToken);
+
+        if (trace is not null)
+            trace.OutputPluginResult = outResult.Success ? outResult.Output : outResult.ErrorMessage;
+
+        if (outResult.Success)
+            return null;
+
+        if (trace is not null)
+        {
+            trace.OutputPluginErrorCode = outResult.ErrorCode ?? "ERROR";
+            trace.OutputPluginErrorMessage = outResult.ErrorMessage ?? "Unknown error";
+        }
+
+        return CreatePluginErrorResponse(
+            PluginError.Format(outResult.ErrorCode ?? "ERROR", outResult.ErrorMessage ?? "Unknown error"));
+    }
+
+    private static async IAsyncEnumerable<AgentResponseUpdate> RunStreamingWithPluginsAsync(
+        IEnumerable<ChatMessage> messages,
+        AgentSession? session,
+        AgentRunOptions? options,
+        AIAgent inner,
+        bool hasInput,
+        bool hasOutput,
+        InputProcessorPlugin inputPlugin,
+        OutputIntegratorPlugin outputPlugin,
+        string userId,
+        IReadOnlyDictionary<string, string>? parameters,
+        AgentExecutionTrace? trace,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var (msgList, inputErrorResponse) = await ApplyInputPluginAsync(
+            messages,
+            hasInput,
+            inputPlugin,
+            userId,
+            parameters,
+            trace,
+            cancellationToken);
+
+        if (inputErrorResponse is not null)
+        {
+            foreach (var update in inputErrorResponse.ToAgentResponseUpdates())
+                yield return update;
+            yield break;
+        }
+
+        var responseText = new StringBuilder();
+
+        await foreach (var update in inner.RunStreamingAsync(msgList, session, options, cancellationToken)
+            .WithCancellation(cancellationToken))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+                responseText.Append(update.Text);
+
+            yield return update;
+        }
+
+        if (trace is not null)
+            trace.RawLlmResponse = responseText.ToString();
+
+        var outputErrorResponse = await ApplyOutputPluginAsync(
+            responseText.ToString(),
+            hasOutput,
+            outputPlugin,
+            userId,
+            parameters,
+            trace,
+            cancellationToken);
+
+        if (outputErrorResponse is null)
+            yield break;
+
+        foreach (var update in outputErrorResponse.ToAgentResponseUpdates())
+            yield return update;
+    }
+
+    private static AgentResponse CreatePluginErrorResponse(string text) =>
+        new([new ChatMessage(ChatRole.Assistant, text)]);
 
     /// <summary>
     /// Creates an AF pipeline-ready agent for an orchestration step.
@@ -206,11 +422,34 @@ public sealed class AgentFactory(
         IReadOnlyDictionary<string, string>? parameters,
         CancellationToken ct = default)
     {
-        // Apply prompt override before building
-        var effectiveDef = promptOverride is not null
-            ? agentDef with { SystemPrompt = promptOverride }
-            : agentDef;
+        return (await CreateRuntimeAgentAsync(
+            agentDef,
+            user,
+            inputPlugin,
+            outputPlugin,
+            parameters,
+            promptOverride,
+            ct)).Agent;
+    }
 
-        return await CreatePipelineAgentAsync(effectiveDef, user, inputPlugin, outputPlugin, parameters, ct);
+    private IList<AIContextProvider>? BuildSkillContextProviders(IReadOnlyList<SkillDefinition> skills)
+    {
+        var skillDirectories = skills
+            .Select(skill => skill.PackageDirectory)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (skillDirectories.Count == 0)
+            return null;
+
+#pragma warning disable MAAI001
+        var provider = new FileAgentSkillsProvider(
+            skillDirectories!,
+            new FileAgentSkillsProviderOptions(),
+            loggerFactory);
+#pragma warning restore MAAI001
+
+        return [provider];
     }
 }

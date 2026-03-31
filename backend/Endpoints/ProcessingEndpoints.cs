@@ -41,6 +41,41 @@ public static class ProcessingEndpoints
                 : Results.UnprocessableEntity(result);
         });
 
+        group.MapPost("/stream", async (
+            ProcessingRequest request,
+            IAgentExecutionRuntime runtime,
+            TaskHistoryRegistry history,
+            UserContext user,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var finalResult = await ProcessingStreamWriter.WriteNdjsonAsync(
+                httpContext.Response,
+                runtime.StreamProcessAsync(request, user, ct),
+                ct);
+            sw.Stop();
+
+            if (finalResult is null)
+                return;
+
+            await history.RecordAsync(new TaskHistoryEntity
+            {
+                Summary = $"{SummarizeSource(request.InputSource)} → {request.OutputDestination}",
+                AgentId = request.AgentId,
+                Success = finalResult.Success,
+                Message = finalResult.Message,
+                DurationMs = sw.Elapsed.TotalMilliseconds,
+                OwnerId = user.UserId,
+            }, CancellationToken.None);
+        });
+
         group.MapPost("/pipeline", async (
             PipelineRequest pipeline,
             IAgentExecutionRuntime runtime,
@@ -68,6 +103,41 @@ public static class ProcessingEndpoints
             return result.Success
                 ? Results.Ok(result)
                 : Results.UnprocessableEntity(result);
+        });
+
+        group.MapPost("/pipeline/stream", async (
+            PipelineRequest pipeline,
+            IAgentExecutionRuntime runtime,
+            TaskHistoryRegistry history,
+            UserContext user,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var finalResult = await ProcessingStreamWriter.WriteNdjsonAsync(
+                httpContext.Response,
+                runtime.StreamPipelineAsync(pipeline, user, ct),
+                ct);
+            sw.Stop();
+
+            if (finalResult is null)
+                return;
+
+            await history.RecordAsync(new TaskHistoryEntity
+            {
+                Summary = $"Pipeline: {pipeline.Name}",
+                PipelineName = pipeline.Name,
+                Success = finalResult.Success,
+                Message = finalResult.Message,
+                DurationMs = sw.Elapsed.TotalMilliseconds,
+                OwnerId = user.UserId,
+            }, CancellationToken.None);
         });
 
         return routes;

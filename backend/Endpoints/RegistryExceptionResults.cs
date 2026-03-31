@@ -22,5 +22,9 @@ public static class RegistryExceptionResults
         {
             return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status403Forbidden);
         }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 }

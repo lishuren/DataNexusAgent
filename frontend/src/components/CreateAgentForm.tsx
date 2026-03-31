@@ -631,7 +631,7 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
 
       {/* Skills */}
       <div style={{ marginBottom: "0.75rem" }}>
-        <label className="form-label">Skills <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(injected into system prompt)</span></label>
+        <label className="form-label">Skills <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(provided through MAF skill context)</span></label>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
           {skills.map((s) => (
             <span key={s} className="badge badge-public" style={{ padding: "4px 10px", cursor: "pointer" }} onClick={() => removeSkill(s)}>

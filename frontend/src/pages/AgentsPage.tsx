@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Agent, Pipeline } from "@/types/api";
+import type { Agent, ConcurrentAggregatorMode, ExecutionMode, Pipeline } from "@/types/api";
 import {
   listAgents,
   listPipelines,
@@ -21,6 +21,22 @@ import { CreateAgentForm } from "@/components/CreateAgentForm";
 import { PipelineBuilder } from "@/components/PipelineBuilder";
 import { SavedPipelines } from "@/components/SavedPipelines";
 
+const PIPELINE_MODE_OPTIONS: Array<{ value: ExecutionMode; label: string }> = [
+  { value: "Sequential", label: "Sequential" },
+  { value: "Concurrent", label: "Concurrent" },
+  { value: "Handoff", label: "Handoff" },
+  { value: "GroupChat", label: "Group Chat" },
+];
+
+const PIPELINE_MODE_HELP: Record<ExecutionMode, string> = {
+  Sequential: "Each step runs in order, passing its output to the next agent.",
+  Concurrent: "All steps run in parallel and their outputs are merged with the selected aggregator.",
+  Handoff: "The first pipeline step acts as the triage agent and routes work to the remaining steps.",
+  GroupChat: "All steps join a round-robin discussion. Saved pipelines currently use the default 10-turn cap.",
+};
+
+const CONCURRENT_AGGREGATOR_OPTIONS: ConcurrentAggregatorMode[] = ["Concatenate", "First", "Last"];
+
 export default function AgentsPage() {
   const pluginCatalog = [
     {
@@ -40,6 +56,8 @@ export default function AgentsPage() {
   const [pipelineName, setPipelineName] = useState("");
   const [pipelineSteps, setPipelineSteps] = useState<number[]>([]);
   const [selfCorrection, setSelfCorrection] = useState(true);
+  const [pipelineExecutionMode, setPipelineExecutionMode] = useState<ExecutionMode>("Sequential");
+  const [pipelineConcurrentAggregatorMode, setPipelineConcurrentAggregatorMode] = useState<ConcurrentAggregatorMode>("Concatenate");
   const [editingPipelineId, setEditingPipelineId] = useState<number | null>(null);
   const [pipelineMsg, setPipelineMsg] = useState("");
   const userId = getUserId();
@@ -113,17 +131,24 @@ export default function AgentsPage() {
           name: pipelineName,
           agentIds: pipelineSteps,
           enableSelfCorrection: selfCorrection,
+          executionMode: pipelineExecutionMode,
+          concurrentAggregatorMode: pipelineConcurrentAggregatorMode,
         });
       } else {
         await createPipeline({
           name: pipelineName,
           agentIds: pipelineSteps,
           enableSelfCorrection: selfCorrection,
+          executionMode: pipelineExecutionMode,
+          concurrentAggregatorMode: pipelineConcurrentAggregatorMode,
         });
       }
-      setPipelineMsg(`Pipeline "${pipelineName}" saved with ${pipelineSteps.length} steps.`);
+      setPipelineMsg(`Pipeline "${pipelineName}" saved in ${pipelineExecutionMode} mode with ${pipelineSteps.length} steps.`);
       setPipelineName("");
       setPipelineSteps([]);
+      setSelfCorrection(true);
+      setPipelineExecutionMode("Sequential");
+      setPipelineConcurrentAggregatorMode("Concatenate");
       setEditingPipelineId(null);
       refresh();
     } catch (e) {
@@ -136,6 +161,8 @@ export default function AgentsPage() {
     setPipelineName(p.name);
     setPipelineSteps(p.agentIds);
     setSelfCorrection(p.enableSelfCorrection);
+    setPipelineExecutionMode(p.executionMode);
+    setPipelineConcurrentAggregatorMode(p.concurrentAggregatorMode);
   };
 
   const handleDeletePipeline = async (id: number) => {
@@ -179,6 +206,9 @@ export default function AgentsPage() {
   const clearPipeline = () => {
     setPipelineSteps([]);
     setPipelineName("");
+    setSelfCorrection(true);
+    setPipelineExecutionMode("Sequential");
+    setPipelineConcurrentAggregatorMode("Concatenate");
     setEditingPipelineId(null);
     setPipelineMsg("");
   };
@@ -282,6 +312,42 @@ export default function AgentsPage() {
           onChange={(e) => setPipelineName(e.target.value)}
         />
         <PipelineBuilder steps={pipelineSteps} agents={agents} onChange={setPipelineSteps} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginBottom: "0.5rem" }}>
+          <div>
+            <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Execution Mode
+            </label>
+            <select
+              value={pipelineExecutionMode}
+              onChange={(e) => setPipelineExecutionMode(e.target.value as ExecutionMode)}
+              style={{ marginBottom: 0 }}
+            >
+              {PIPELINE_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {pipelineExecutionMode === "Concurrent" && (
+            <div>
+              <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                Concurrent Aggregator
+              </label>
+              <select
+                value={pipelineConcurrentAggregatorMode}
+                onChange={(e) => setPipelineConcurrentAggregatorMode(e.target.value as ConcurrentAggregatorMode)}
+                style={{ marginBottom: 0 }}
+              >
+                {CONCURRENT_AGGREGATOR_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+          {PIPELINE_MODE_HELP[pipelineExecutionMode]}
+        </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn btn-primary" onClick={handleSavePipeline}>
             {editingPipelineId ? "Update Pipeline" : "Save Pipeline"}

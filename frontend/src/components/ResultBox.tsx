@@ -94,18 +94,18 @@ export function ResultBox({ result }: ResultBoxProps) {
                 d.skillDetails.map((sk) => (
                   <DebugSection
                     key={sk.step}
-                    label={`② Skill: ${sk.step} (${sk.status})`}
+                    label={`② Skill Package: ${sk.step} (${sk.status})`}
                     meta={sk.chars ? `${sk.chars.toLocaleString()} chars` : undefined}
                     content={sk.preview ?? ""}
                   />
                 ))
               ) : (
-                <div className="result-debug-note">② Skills — none loaded</div>
+                <div className="result-debug-note">② Skill packages — none configured</div>
               )}
 
               {/* Step 3 – System prompt */}
               <DebugSection
-                label="③ System prompt sent to LLM (agent prompt + injected skills)"
+                label="③ Agent instructions (skills are advertised through MAF context providers)"
                 meta={`${d.systemPromptLength.toLocaleString()} chars`}
                 content={d.systemPromptPreview}
               />

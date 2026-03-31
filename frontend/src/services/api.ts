@@ -1,5 +1,18 @@
 import { getToken, logout } from "./auth";
-import type { Agent, Orchestration, OrchestrationStep, Pipeline, PipelineRequest, ProcessingRequest, ProcessingResult, Skill, TaskHistory } from "@/types/api";
+import type {
+  Agent,
+  ConcurrentAggregatorMode,
+  ExecutionMode,
+  Orchestration,
+  OrchestrationStep,
+  Pipeline,
+  PipelineRequest,
+  ProcessingRequest,
+  ProcessingResult,
+  ProcessingStreamEvent,
+  Skill,
+  TaskHistory,
+} from "@/types/api";
 
 const BASE_URL = "/api";
 
@@ -27,6 +40,78 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return res.json() as Promise<T>;
+}
+
+async function apiStream(
+  path: string,
+  body: unknown,
+  onEvent?: (event: ProcessingStreamEvent) => void,
+): Promise<ProcessingResult> {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401) {
+    logout();
+    throw new Error("Session expired — redirecting to login");
+  }
+
+  if (!res.ok) {
+    const responseBody = await res.text();
+    throw new Error(`API ${res.status}: ${responseBody}`);
+  }
+
+  if (!res.body) {
+    throw new Error("Streaming response body is not available in this browser.");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: ProcessingResult | null = null;
+
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+
+    const streamEvent = JSON.parse(line) as ProcessingStreamEvent;
+    onEvent?.(streamEvent);
+
+    if (streamEvent.type === "result" && streamEvent.result) {
+      finalResult = streamEvent.result;
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
+      handleLine(line);
+      newlineIndex = buffer.indexOf("\n");
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    handleLine(buffer);
+  }
+
+  if (!finalResult) {
+    throw new Error("Stream ended without a final result.");
+  }
+
+  return finalResult;
 }
 
 // --- Skills ---
@@ -141,11 +226,21 @@ export const processData = (request: ProcessingRequest) =>
     body: JSON.stringify(request),
   });
 
+export const processDataStream = (
+  request: ProcessingRequest,
+  onEvent?: (event: ProcessingStreamEvent) => void,
+) => apiStream("/process/stream", request, onEvent);
+
 export const runPipeline = (pipeline: PipelineRequest) =>
   apiFetch<ProcessingResult>("/process/pipeline", {
     method: "POST",
     body: JSON.stringify(pipeline),
   });
+
+export const runPipelineStream = (
+  pipeline: PipelineRequest,
+  onEvent?: (event: ProcessingStreamEvent) => void,
+) => apiStream("/process/pipeline/stream", pipeline, onEvent);
 
 // --- Pipelines (CRUD) ---
 
@@ -160,6 +255,8 @@ export const createPipeline = (pipeline: {
   agentIds: number[];
   enableSelfCorrection?: boolean;
   maxCorrectionAttempts?: number;
+  executionMode?: ExecutionMode;
+  concurrentAggregatorMode?: ConcurrentAggregatorMode;
 }) =>
   apiFetch<Pipeline>("/pipelines", {
     method: "POST",
@@ -171,6 +268,8 @@ export const updatePipeline = (id: number, pipeline: {
   agentIds: number[];
   enableSelfCorrection?: boolean;
   maxCorrectionAttempts?: number;
+  executionMode?: ExecutionMode;
+  concurrentAggregatorMode?: ConcurrentAggregatorMode;
 }) =>
   apiFetch<Pipeline>(`/pipelines/${id}`, {
     method: "PUT",
@@ -215,6 +314,9 @@ export const planOrchestration = (request: {
   agentIds?: number[];
   enableSelfCorrection?: boolean;
   maxCorrectionAttempts?: number;
+  executionMode?: ExecutionMode;
+  triageStepNumber?: number;
+  groupChatMaxIterations?: number;
 }) =>
   apiFetch<Orchestration>("/orchestrations/plan", {
     method: "POST",
@@ -232,9 +334,33 @@ export const getOrchestration = (id: number) =>
 
 export const updateOrchestration = (id: number, data: {
   name: string;
-  steps: OrchestrationStep[];
+  steps?: OrchestrationStep[];
+  workflowKind?: "Structured" | "Graph";
+  graph?: {
+    nodes: Array<{
+      id: string;
+      displayOrder: number;
+      title: string;
+      description: string;
+      agentId: number;
+      agentName: string;
+      isEdited: boolean;
+      promptOverride: string | null;
+      parameters: Record<string, string> | null;
+      positionX: number;
+      positionY: number;
+    }>;
+    edges: Array<{
+      id: string;
+      sourceNodeId: string;
+      targetNodeId: string;
+    }>;
+  } | null;
   enableSelfCorrection?: boolean;
   maxCorrectionAttempts?: number;
+  executionMode?: "Sequential" | "Concurrent" | "Handoff" | "GroupChat";
+  triageStepNumber?: number;
+  groupChatMaxIterations?: number;
 }) =>
   apiFetch<Orchestration>(`/orchestrations/${id}`, {
     method: "PUT",
@@ -258,6 +384,12 @@ export const runOrchestration = (id: number, inputSource: string) =>
     method: "POST",
     body: JSON.stringify({ inputSource }),
   });
+
+export const runOrchestrationStream = (
+  id: number,
+  inputSource: string,
+  onEvent?: (event: ProcessingStreamEvent) => void,
+) => apiStream(`/orchestrations/${id}/run/stream`, { inputSource }, onEvent);
 
 export const publishOrchestration = (id: number) =>
   apiFetch<Orchestration>(`/orchestrations/${id}/publish`, { method: "POST" });

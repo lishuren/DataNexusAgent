@@ -48,7 +48,7 @@ function SkillHelpPanel({
         <label className="form-label" style={{ marginBottom: 0 }}>
           Instructions{" "}
           <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>
-            (markdown — injected verbatim into the agent's system prompt)
+            (markdown body stored in a SKILL.md package and exposed through MAF skill context)
           </span>
         </label>
         <button
@@ -92,7 +92,7 @@ function SkillHelpPanel({
             <li>Use <strong>Rules</strong> sections for transformations the model must always apply.</li>
             <li>Use <strong>Examples</strong> to show exact input → output pairs.</li>
             <li>Keep skills focused on one domain — combine multiple skills on the agent instead.</li>
-            <li>Skills are passive knowledge only — they cannot trigger plugins or API calls.</li>
+            <li>Skills are stored as SKILL.md packages and exposed through MAF context tools, not pasted into the agent prompt.</li>
           </ul>
 
           {/* Section template inserts */}

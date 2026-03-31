@@ -14,4 +14,7 @@ public sealed record PipelineRequest(
     string OutputDestination,
     bool EnableSelfCorrection = true,
     int MaxCorrectionAttempts = 3,
+    DataNexus.Core.ExecutionMode ExecutionMode = DataNexus.Core.ExecutionMode.Sequential,
+    DataNexus.Core.ConcurrentAggregatorMode ConcurrentAggregatorMode = DataNexus.Core.ConcurrentAggregatorMode.Concatenate,
+    int GroupChatMaxIterations = 10,
     IReadOnlyDictionary<string, string>? Parameters = null);

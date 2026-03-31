@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Agent, Pipeline, ProcessingResult, UiField } from "@/types/api";
-import { listAgents, listPipelines, processData, runPipeline, getAgent } from "@/services/api";
+import { listAgents, listPipelines, processDataStream, runPipelineStream, getAgent } from "@/services/api";
 import { AgentSelector } from "@/components/AgentSelector";
 import { DynamicForm } from "@/components/DynamicForm";
 import { QuickActions } from "@/components/QuickActions";
 import { ResultBox } from "@/components/ResultBox";
 import { RecentTasks } from "@/components/RecentTasks";
+import { LiveRunBox } from "@/components/LiveRunBox";
+import { applyProcessingStreamEvent, createLiveRunState, type LiveRunState } from "@/utils/processingStream";
 
 export default function ProcessPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -16,6 +18,7 @@ export default function ProcessPage() {
   const [fields, setFields] = useState<UiField[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [result, setResult] = useState<ProcessingResult | null>(null);
+  const [liveRun, setLiveRun] = useState<LiveRunState | null>(null);
   const [loading, setLoading] = useState(false);
 
   const normalizeUiSchema = (schema: Agent["uiSchema"]): UiField[] => {
@@ -72,6 +75,7 @@ export default function ProcessPage() {
     setSelectedAgentId(id);
     setSelectedPipelineId(undefined);
     setResult(null);
+    setLiveRun(null);
     setValues({});
     const list = agentsList ?? agents;
     const cached = list.find((a) => a.id === id);
@@ -92,6 +96,7 @@ export default function ProcessPage() {
     setSelectedAgentId(undefined);
     setSelectedAgent(null);
     setResult(null);
+    setLiveRun(null);
     setValues({});
     // Pipeline uses simple input fields
     setFields([
@@ -104,22 +109,30 @@ export default function ProcessPage() {
   const handleRun = async () => {
     setLoading(true);
     setResult(null);
+    setLiveRun(createLiveRunState(activePipeline ? `Starting pipeline '${activePipeline.name}'…` : `Starting agent '${selectedAgent?.name ?? "task"}'…`));
+
+    const onStreamEvent = (event: Parameters<typeof applyProcessingStreamEvent>[1]) => {
+      setLiveRun((prev) => applyProcessingStreamEvent(prev ?? createLiveRunState(), event));
+    };
+
     try {
       let res: ProcessingResult;
       if (selectedPipelineId) {
         const pipe = pipelines.find((p) => p.id === selectedPipelineId);
         if (!pipe) throw new Error("Pipeline not found");
-        res = await runPipeline({
+        res = await runPipelineStream({
           name: pipe.name,
           agentIds: pipe.agentIds,
           inputSource: values["inputSource"] ?? "",
           outputDestination: values["outputDestination"] ?? "",
           enableSelfCorrection: pipe.enableSelfCorrection,
           maxCorrectionAttempts: pipe.maxCorrectionAttempts,
+          executionMode: pipe.executionMode,
+          concurrentAggregatorMode: pipe.concurrentAggregatorMode,
           parameters: values,
-        });
+        }, onStreamEvent);
       } else {
-        res = await processData({
+        res = await processDataStream({
           agentId: selectedAgentId,
           // Prefer base64 file content; fall back to text/url fields by common names
           inputSource:
@@ -132,13 +145,21 @@ export default function ProcessPage() {
           outputDestination: values["endpoint"] ?? values["outputFormat"] ?? "json",
           skillName: values["skill"],
           parameters: values,
-        });
+        }, onStreamEvent);
       }
       setResult(res);
     } catch (e) {
       setResult({ success: false, message: e instanceof Error ? e.message : String(e) });
+      setLiveRun((prev) => prev
+        ? {
+            ...prev,
+            active: false,
+            statusLines: [...prev.statusLines, "Run failed."].slice(-6),
+          }
+        : null);
     } finally {
       setLoading(false);
+      setLiveRun((prev) => prev ? { ...prev, active: false } : prev);
     }
   };
 
@@ -197,6 +218,8 @@ export default function ProcessPage() {
       </div>
 
       <QuickActions actions={[]} />
+
+      {liveRun && <LiveRunBox state={liveRun} title="Live Execution Stream" />}
 
       {result && <ResultBox result={result} />}
 

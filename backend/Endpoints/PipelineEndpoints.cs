@@ -21,6 +21,8 @@ public static class PipelineEndpoints
             {
                 p.Id, p.Name, p.AgentIds,
                 p.EnableSelfCorrection, p.MaxCorrectionAttempts,
+                ExecutionMode = p.ExecutionMode.ToString(),
+                ConcurrentAggregatorMode = p.ConcurrentAggregatorMode.ToString(),
                 Scope = p.Scope.ToString(), p.OwnerId, p.PublishedByUserId
             }));
         });
@@ -33,6 +35,8 @@ public static class PipelineEndpoints
             {
                 p.Id, p.Name, p.AgentIds,
                 p.EnableSelfCorrection, p.MaxCorrectionAttempts,
+                ExecutionMode = p.ExecutionMode.ToString(),
+                ConcurrentAggregatorMode = p.ConcurrentAggregatorMode.ToString(),
                 Scope = p.Scope.ToString(), p.OwnerId, p.PublishedByUserId
             }));
         });
@@ -68,11 +72,15 @@ public static class PipelineEndpoints
                 var pipeline = await registry.CreateAsync(
                     user.UserId, request.Name, request.AgentIds,
                     request.EnableSelfCorrection ?? true,
-                    request.MaxCorrectionAttempts ?? 3, ct);
+                    request.MaxCorrectionAttempts ?? 3,
+                    request.ExecutionMode ?? ExecutionMode.Sequential,
+                    request.ConcurrentAggregatorMode ?? ConcurrentAggregatorMode.Concatenate,
+                    ct);
 
                 return Results.Created($"/api/pipelines/{pipeline.Id}", new
                 {
                     pipeline.Id, pipeline.Name,
+                    ExecutionMode = pipeline.ExecutionMode.ToString(),
                     Scope = pipeline.Scope.ToString()
                 });
             });
@@ -100,11 +108,15 @@ public static class PipelineEndpoints
                 var pipeline = await registry.UpdateAsync(
                     user.UserId, id, request.Name, request.AgentIds,
                     request.EnableSelfCorrection ?? true,
-                    request.MaxCorrectionAttempts ?? 3, ct);
+                    request.MaxCorrectionAttempts ?? 3,
+                    request.ExecutionMode ?? ExecutionMode.Sequential,
+                    request.ConcurrentAggregatorMode ?? ConcurrentAggregatorMode.Concatenate,
+                    ct);
 
                 return Results.Ok(new
                 {
                     pipeline.Id, pipeline.Name,
+                    ExecutionMode = pipeline.ExecutionMode.ToString(),
                     Scope = pipeline.Scope.ToString()
                 });
             });
@@ -193,13 +205,17 @@ public static class PipelineEndpoints
         string Name,
         IReadOnlyList<int> AgentIds,
         bool? EnableSelfCorrection,
-        int? MaxCorrectionAttempts);
+        int? MaxCorrectionAttempts,
+        ExecutionMode? ExecutionMode,
+        ConcurrentAggregatorMode? ConcurrentAggregatorMode);
 
     private sealed record UpdatePipelineRequest(
         string Name,
         IReadOnlyList<int> AgentIds,
         bool? EnableSelfCorrection,
-        int? MaxCorrectionAttempts);
+        int? MaxCorrectionAttempts,
+        ExecutionMode? ExecutionMode,
+        ConcurrentAggregatorMode? ConcurrentAggregatorMode);
 
     private sealed record ClonePipelineRequest(string Name);
 }

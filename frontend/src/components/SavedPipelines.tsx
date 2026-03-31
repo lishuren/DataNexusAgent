@@ -1,5 +1,12 @@
 import type { Agent, Pipeline } from "@/types/api";
 
+const EXECUTION_MODE_LABEL: Record<Pipeline["executionMode"], string> = {
+  Sequential: "Sequential",
+  Concurrent: "Concurrent",
+  Handoff: "Handoff",
+  GroupChat: "Group Chat",
+};
+
 interface SavedPipelinesProps {
   pipelines: Pipeline[];
   agents: Agent[];
@@ -40,6 +47,7 @@ export function SavedPipelines({
             return a ? `${a.icon} ${a.name}` : `#${id}`;
           })
           .join(" → ");
+        const modeLabel = EXECUTION_MODE_LABEL[p.executionMode] ?? p.executionMode;
 
         return (
           <li key={p.id}>
@@ -48,6 +56,14 @@ export function SavedPipelines({
                 🔗 {p.name}
                 {p.enableSelfCorrection && (
                   <span className="badge badge-public" style={{ marginLeft: "6px" }}>Self-correction</span>
+                )}
+              </span>
+              <span style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                <span className="badge badge-private" style={{ textTransform: "none" }}>{modeLabel}</span>
+                {p.executionMode === "Concurrent" && (
+                  <span className="badge badge-private" style={{ textTransform: "none" }}>
+                    Aggregator: {p.concurrentAggregatorMode}
+                  </span>
                 )}
               </span>
               <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{stepNames}</span>

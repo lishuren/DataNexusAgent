@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Agent, Orchestration, ProcessingResult } from "@/types/api";
+import type { Agent, ExecutionMode, Orchestration, ProcessingResult } from "@/types/api";
 import {
   listAgents,
   listOrchestrations,
@@ -9,6 +9,20 @@ import { getUserId } from "@/services/auth";
 import { OrchestrationReview } from "@/components/OrchestrationReview";
 import { ResultBox } from "@/components/ResultBox";
 
+const ORCHESTRATION_MODE_OPTIONS: Array<{ value: ExecutionMode; label: string }> = [
+  { value: "Sequential", label: "Sequential" },
+  { value: "Concurrent", label: "Concurrent" },
+  { value: "Handoff", label: "Handoff" },
+  { value: "GroupChat", label: "Group Chat" },
+];
+
+const ORCHESTRATION_MODE_HELP: Record<ExecutionMode, string> = {
+  Sequential: "Steps run one after another. This is the default review-and-approve workflow.",
+  Concurrent: "All planned steps fan out in parallel and their outputs are merged before completion.",
+  Handoff: "The first planned step becomes the triage agent by default. You can change the triage step during review.",
+  GroupChat: "All steps participate in a round-robin discussion before the orchestration completes.",
+};
+
 export default function OrchestrationsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
@@ -17,6 +31,8 @@ export default function OrchestrationsPage() {
   // Planner form state
   const [planGoal, setPlanGoal] = useState("");
   const [planConstraints, setPlanConstraints] = useState("");
+  const [planExecutionMode, setPlanExecutionMode] = useState<ExecutionMode>("Sequential");
+  const [planGroupChatMaxIterations, setPlanGroupChatMaxIterations] = useState(10);
   const [planning, setPlanning] = useState(false);
   const [planMsg, setPlanMsg] = useState("");
 
@@ -45,9 +61,14 @@ export default function OrchestrationsPage() {
       await planOrchestration({
         goal: planGoal.trim(),
         constraints: planConstraints.trim() || undefined,
+        executionMode: planExecutionMode,
+        triageStepNumber: 1,
+        groupChatMaxIterations: planExecutionMode === "GroupChat" ? planGroupChatMaxIterations : undefined,
       });
       setPlanGoal("");
       setPlanConstraints("");
+      setPlanExecutionMode("Sequential");
+      setPlanGroupChatMaxIterations(10);
       setPlanMsg("Plan generated! Review it below.");
       refresh();
     } catch (e) {
@@ -71,8 +92,8 @@ export default function OrchestrationsPage() {
       <div className="card">
         <h2>🧠 AI Orchestration Planner</h2>
         <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
-          Describe a goal and the AI will decompose it into an ordered agent workflow.
-          Review, edit agents &amp; prompts, approve, then run.
+          Describe a goal and the AI will decompose it into an initial agent workflow.
+          Draft orchestrations can stay structured or switch into a graph editor for branching DAG flows before approval.
         </p>
         <textarea
           placeholder={"Describe your goal, e.g.\n• Parse my sales Excel, validate data quality, push clean records to the CRM API\n• Extract invoice line items, convert currencies, generate a summary report"}
@@ -86,6 +107,41 @@ export default function OrchestrationsPage() {
           onChange={(e) => setPlanConstraints(e.target.value)}
           style={{ marginBottom: "0.5rem" }}
         />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginBottom: "0.5rem" }}>
+          <div>
+            <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Execution Mode
+            </label>
+            <select
+              value={planExecutionMode}
+              onChange={(e) => setPlanExecutionMode(e.target.value as ExecutionMode)}
+              style={{ marginBottom: 0 }}
+            >
+              {ORCHESTRATION_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {planExecutionMode === "GroupChat" && (
+            <div>
+              <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                Max Chat Turns
+              </label>
+              <input
+                type="number"
+                min={2}
+                max={50}
+                value={planGroupChatMaxIterations}
+                onChange={(e) => setPlanGroupChatMaxIterations(Math.max(2, Math.min(50, Number(e.target.value) || 10)))}
+                style={{ marginBottom: 0 }}
+              />
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+          {ORCHESTRATION_MODE_HELP[planExecutionMode]}
+        </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
           <button
             className="btn btn-primary"

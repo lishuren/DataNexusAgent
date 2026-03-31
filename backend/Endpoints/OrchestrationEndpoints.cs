@@ -1,6 +1,7 @@
 using DataNexus.Agents;
 using DataNexus.Core;
 using DataNexus.Identity;
+using DataNexus.Models;
 
 namespace DataNexus.Endpoints;
 
@@ -27,7 +28,12 @@ public static class OrchestrationEndpoints
                 return Results.BadRequest("A goal is required.");
 
             var plan = await planner.GeneratePlanAsync(
-                request.Goal, request.Constraints, request.AgentIds, user, ct);
+                request.Goal,
+                request.Constraints,
+                request.AgentIds,
+                request.ExecutionMode ?? ExecutionMode.Sequential,
+                user,
+                ct);
 
             if (plan.Steps.Count == 0)
                 return Results.UnprocessableEntity("Planner could not decompose the goal into steps.");
@@ -37,10 +43,20 @@ public static class OrchestrationEndpoints
             return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
                 var orch = await registry.CreateAsync(
-                    user.UserId, name, request.Goal, plan.Steps,
-                    plan.Model, plan.Notes,
-                    request.EnableSelfCorrection ?? true,
-                    request.MaxCorrectionAttempts ?? 3, ct);
+                    user.UserId,
+                    name,
+                    request.Goal,
+                    plan.Steps,
+                    plannerModel: plan.Model,
+                    plannerNotes: plan.Notes,
+                    enableSelfCorrection: request.EnableSelfCorrection ?? true,
+                    maxCorrectionAttempts: request.MaxCorrectionAttempts ?? 3,
+                    workflowKind: OrchestrationWorkflowKind.Structured,
+                    graph: null,
+                    executionMode: request.ExecutionMode ?? ExecutionMode.Sequential,
+                    triageStepNumber: request.TriageStepNumber ?? 1,
+                    groupChatMaxIterations: request.GroupChatMaxIterations ?? 10,
+                    ct: ct);
 
                 return Results.Created($"/api/orchestrations/{orch.Id}", ToResponse(orch));
             });
@@ -100,15 +116,24 @@ public static class OrchestrationEndpoints
             if (string.IsNullOrWhiteSpace(request.Name))
                 return Results.BadRequest("Name is required.");
 
-            if (request.Steps is not { Count: >= 1 })
+            if (request.WorkflowKind != OrchestrationWorkflowKind.Graph && request.Steps is not { Count: >= 1 })
                 return Results.BadRequest("At least one step is required.");
 
             return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
                 var orch = await registry.UpdateAsync(
-                    user.UserId, id, request.Name, request.Steps,
-                    request.EnableSelfCorrection ?? true,
-                    request.MaxCorrectionAttempts ?? 3, ct);
+                    user.UserId,
+                    id,
+                    request.Name,
+                    request.Steps,
+                    enableSelfCorrection: request.EnableSelfCorrection ?? true,
+                    maxCorrectionAttempts: request.MaxCorrectionAttempts ?? 3,
+                    workflowKind: request.WorkflowKind ?? OrchestrationWorkflowKind.Structured,
+                    graph: request.Graph,
+                    executionMode: request.ExecutionMode ?? ExecutionMode.Sequential,
+                    triageStepNumber: request.TriageStepNumber ?? 1,
+                    groupChatMaxIterations: request.GroupChatMaxIterations ?? 10,
+                    ct: ct);
 
                 return Results.Ok(ToResponse(orch));
             });
@@ -225,6 +250,80 @@ public static class OrchestrationEndpoints
                 : Results.UnprocessableEntity(result);
         });
 
+        group.MapPost("/{id:int}/run/stream", async (
+            int id,
+            RunOrchestrationRequest request,
+            OrchestrationRegistry registry,
+            IAgentExecutionRuntime runtime,
+            TaskHistoryRegistry history,
+            UserContext user,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            if (!user.IsAuthenticated)
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(request.InputSource))
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await httpContext.Response.WriteAsync("inputSource is required.", ct);
+                return;
+            }
+
+            OrchestrationEntity entity;
+            try
+            {
+                entity = await registry.StartRunAsync(user.UserId, id, ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await httpContext.Response.WriteAsync(ex.Message, ct);
+                return;
+            }
+
+            var orchestration = entity.ToDefinition();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            ProcessingResult? finalResult = null;
+
+            try
+            {
+                finalResult = await ProcessingStreamWriter.WriteNdjsonAsync(
+                    httpContext.Response,
+                    runtime.StreamOrchestrationAsync(orchestration, request.InputSource, user, ct),
+                    ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                finalResult = ProcessingResult.Fail($"Orchestration '{orchestration.Name}' stream was cancelled.");
+            }
+            finally
+            {
+                sw.Stop();
+
+                if (finalResult is null)
+                    finalResult = ProcessingResult.Fail($"Orchestration '{orchestration.Name}' ended without a final result.");
+
+                var finalStatus = finalResult.Success
+                    ? OrchestrationStatus.Completed
+                    : OrchestrationStatus.Failed;
+                await registry.CompleteRunAsync(id, finalStatus, CancellationToken.None);
+
+                await history.RecordAsync(new TaskHistoryEntity
+                {
+                    Summary = $"Orchestration: {orchestration.Name}",
+                    PipelineName = orchestration.Name,
+                    Success = finalResult.Success,
+                    Message = finalResult.Message,
+                    DurationMs = sw.Elapsed.TotalMilliseconds,
+                    OwnerId = user.UserId,
+                }, CancellationToken.None);
+            }
+        });
+
         // ── Publish / Unpublish ──────────────────────────────────────────
 
         group.MapPost("/{id:int}/publish", async (
@@ -307,9 +406,13 @@ public static class OrchestrationEndpoints
     private static object ToResponse(OrchestrationDefinition o) => new
     {
         o.Id, o.Name, o.Goal, o.Steps,
+        WorkflowKind = o.WorkflowKind.ToString(),
+        o.Graph,
         Status = o.Status.ToString(),
         o.PlannerModel, o.PlannerNotes,
         o.EnableSelfCorrection, o.MaxCorrectionAttempts,
+        ExecutionMode = o.ExecutionMode.ToString(),
+        o.TriageStepNumber, o.GroupChatMaxIterations,
         Scope = o.Scope.ToString(),
         o.OwnerId, o.PublishedByUserId,
         o.ApprovedAt, o.CreatedAt, o.UpdatedAt,
@@ -326,13 +429,21 @@ public static class OrchestrationEndpoints
         string? Constraints,
         IReadOnlyList<int>? AgentIds,
         bool? EnableSelfCorrection,
-        int? MaxCorrectionAttempts);
+        int? MaxCorrectionAttempts,
+        ExecutionMode? ExecutionMode,
+        int? TriageStepNumber,
+        int? GroupChatMaxIterations);
 
     private sealed record UpdateOrchestrationRequest(
         string Name,
-        IReadOnlyList<OrchestrationStep> Steps,
+        IReadOnlyList<OrchestrationStep>? Steps,
+        OrchestrationWorkflowKind? WorkflowKind,
+        OrchestrationGraph? Graph,
         bool? EnableSelfCorrection,
-        int? MaxCorrectionAttempts);
+        int? MaxCorrectionAttempts,
+        ExecutionMode? ExecutionMode,
+        int? TriageStepNumber,
+        int? GroupChatMaxIterations);
 
     private sealed record RejectRequest(string? Reason);
 

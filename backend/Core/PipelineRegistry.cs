@@ -58,6 +58,8 @@ public sealed class PipelineRegistry(
     public async Task<PipelineDefinition> CreateAsync(
         string userId, string name, IReadOnlyList<int> agentIds,
         bool enableSelfCorrection = true, int maxCorrectionAttempts = 3,
+        ExecutionMode executionMode = ExecutionMode.Sequential,
+        ConcurrentAggregatorMode concurrentAggregatorMode = ConcurrentAggregatorMode.Concatenate,
         CancellationToken ct = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -71,6 +73,8 @@ public sealed class PipelineRegistry(
             AgentIdsJson = JsonSerializer.Serialize(agentIds),
             EnableSelfCorrection = enableSelfCorrection,
             MaxCorrectionAttempts = Math.Clamp(maxCorrectionAttempts, 1, 10),
+            ExecutionMode = executionMode,
+            ConcurrentAggregatorMode = concurrentAggregatorMode,
             Scope = SkillScope.Private,
             OwnerId = userId,
         };
@@ -79,8 +83,8 @@ public sealed class PipelineRegistry(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "[User: {UserId}] Created pipeline '{Name}' with {Count} steps",
-            userId, name, agentIds.Count);
+            "[User: {UserId}] Created pipeline '{Name}' ({Mode}) with {Count} steps",
+            userId, name, executionMode, agentIds.Count);
 
         return entity.ToDefinition();
     }
@@ -88,6 +92,8 @@ public sealed class PipelineRegistry(
     public async Task<PipelineDefinition> UpdateAsync(
         string userId, int pipelineId, string name, IReadOnlyList<int> agentIds,
         bool enableSelfCorrection, int maxCorrectionAttempts,
+        ExecutionMode executionMode = ExecutionMode.Sequential,
+        ConcurrentAggregatorMode concurrentAggregatorMode = ConcurrentAggregatorMode.Concatenate,
         CancellationToken ct = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -103,6 +109,8 @@ public sealed class PipelineRegistry(
         entity.AgentIdsJson = JsonSerializer.Serialize(agentIds);
         entity.EnableSelfCorrection = enableSelfCorrection;
         entity.MaxCorrectionAttempts = Math.Clamp(maxCorrectionAttempts, 1, 10);
+        entity.ExecutionMode = executionMode;
+        entity.ConcurrentAggregatorMode = concurrentAggregatorMode;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);

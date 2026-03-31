@@ -121,6 +121,7 @@ builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<PipelineRegistry>();
 builder.Services.AddSingleton<OrchestrationRegistry>();
 builder.Services.AddSingleton<TaskHistoryRegistry>();
+builder.Services.AddSingleton<DatabaseSchemaUpgrader>();
 
 // External agent execution
 builder.Services.Configure<ExternalAgentOptions>(
@@ -145,7 +146,9 @@ var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<DataNexusDbContext>();
+    var schemaUpgrader = scope.ServiceProvider.GetRequiredService<DatabaseSchemaUpgrader>();
     await db.Database.EnsureCreatedAsync();
+    await schemaUpgrader.EnsureAsync(db);
 }
 
 var skillRegistry = app.Services.GetRequiredService<SkillRegistry>();
