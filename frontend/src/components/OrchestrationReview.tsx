@@ -57,7 +57,16 @@ const EXECUTION_MODE_OPTIONS: Array<{ value: ExecutionMode; label: string }> = [
   { value: "GroupChat", label: "Group Chat" },
 ];
 
-function describeExecutionMode(mode: ExecutionMode, triageStepNumber: number, groupChatMaxIterations: number): string {
+function describeExecutionMode(
+  workflowKind: OrchestrationWorkflowKind,
+  mode: ExecutionMode,
+  triageStepNumber: number,
+  groupChatMaxIterations: number,
+): string {
+  if (workflowKind === "Graph") {
+    return "This orchestration runs as a DAG. Node edges and join barriers define branching and merge order directly, so structured execution modes do not apply.";
+  }
+
   switch (mode) {
     case "Concurrent":
       return "All orchestration steps fan out in parallel and their outputs are merged before completion.";
@@ -207,8 +216,13 @@ export function OrchestrationReview({
       return;
     }
 
-    const nextTriageStepNumber = Math.max(1, Math.min(triageStepNumber, Math.max(1, nextSteps?.length ?? 1)));
-    const nextGroupChatMaxIterations = Math.max(2, Math.min(50, groupChatMaxIterations));
+    const nextExecutionMode = nextWorkflowKind === "Graph" ? "Sequential" : executionMode;
+    const nextTriageStepNumber = nextWorkflowKind === "Graph"
+      ? 1
+      : Math.max(1, Math.min(triageStepNumber, Math.max(1, nextSteps?.length ?? 1)));
+    const nextGroupChatMaxIterations = nextWorkflowKind === "Graph"
+      ? 10
+      : Math.max(2, Math.min(50, groupChatMaxIterations));
 
     setLoading(true);
     try {
@@ -219,7 +233,7 @@ export function OrchestrationReview({
         graph: nextGraph,
         enableSelfCorrection: orch.enableSelfCorrection,
         maxCorrectionAttempts: orch.maxCorrectionAttempts,
-        executionMode,
+        executionMode: nextExecutionMode,
         triageStepNumber: nextTriageStepNumber,
         groupChatMaxIterations: nextGroupChatMaxIterations,
       });
@@ -397,29 +411,39 @@ export function OrchestrationReview({
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: "0.8rem", marginBottom: "0.2rem" }}>Execution Mode</div>
+            <div style={{ fontWeight: 600, fontSize: "0.8rem", marginBottom: "0.2rem" }}>
+              {workflowKind === "Graph" ? "Execution Topology" : "Execution Mode"}
+            </div>
             <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-              {describeExecutionMode(executionMode, triageStepNumber, groupChatMaxIterations)}
+              {describeExecutionMode(workflowKind, executionMode, triageStepNumber, groupChatMaxIterations)}
             </div>
           </div>
           <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-            <span className="badge badge-private" style={{ textTransform: "none" }}>
-              {EXECUTION_MODE_OPTIONS.find((option) => option.value === executionMode)?.label ?? executionMode}
-            </span>
-            {executionMode === "Handoff" && (
+            {workflowKind === "Graph" ? (
               <span className="badge badge-private" style={{ textTransform: "none" }}>
-                Triage step {triageStepNumber}
+                {(graph?.nodes.length ?? steps.length)} nodes
               </span>
-            )}
-            {executionMode === "GroupChat" && (
-              <span className="badge badge-private" style={{ textTransform: "none" }}>
-                {groupChatMaxIterations} turns
-              </span>
+            ) : (
+              <>
+                <span className="badge badge-private" style={{ textTransform: "none" }}>
+                  {EXECUTION_MODE_OPTIONS.find((option) => option.value === executionMode)?.label ?? executionMode}
+                </span>
+                {executionMode === "Handoff" && (
+                  <span className="badge badge-private" style={{ textTransform: "none" }}>
+                    Triage step {triageStepNumber}
+                  </span>
+                )}
+                {executionMode === "GroupChat" && (
+                  <span className="badge badge-private" style={{ textTransform: "none" }}>
+                    {groupChatMaxIterations} turns
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
 
-        {isEditing && (
+        {isEditing && workflowKind !== "Graph" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginTop: "0.75rem" }}>
             <div>
               <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>

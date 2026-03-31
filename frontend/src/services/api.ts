@@ -4,6 +4,7 @@ import type {
   ConcurrentAggregatorMode,
   ExecutionMode,
   Orchestration,
+  OrchestrationWorkflowKind,
   OrchestrationStep,
   Pipeline,
   PipelineRequest,
@@ -314,6 +315,7 @@ export const planOrchestration = (request: {
   agentIds?: number[];
   enableSelfCorrection?: boolean;
   maxCorrectionAttempts?: number;
+  workflowKind?: OrchestrationWorkflowKind;
   executionMode?: ExecutionMode;
   triageStepNumber?: number;
   groupChatMaxIterations?: number;

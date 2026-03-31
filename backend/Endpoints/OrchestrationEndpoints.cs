@@ -27,35 +27,43 @@ public static class OrchestrationEndpoints
             if (string.IsNullOrWhiteSpace(request.Goal))
                 return Results.BadRequest("A goal is required.");
 
-            var plan = await planner.GeneratePlanAsync(
-                request.Goal,
-                request.Constraints,
-                request.AgentIds,
-                request.ExecutionMode ?? ExecutionMode.Sequential,
-                user,
-                ct);
-
-            if (plan.Steps.Count == 0)
-                return Results.UnprocessableEntity("Planner could not decompose the goal into steps.");
-
             var name = request.Name ?? $"Plan: {Truncate(request.Goal, 80)}";
+            var requestedWorkflowKind = request.WorkflowKind ?? OrchestrationWorkflowKind.Structured;
 
             return await RegistryExceptionResults.ExecuteAsync(async () =>
             {
+                var plan = await planner.GeneratePlanAsync(
+                    request.Goal,
+                    request.Constraints,
+                    request.AgentIds,
+                    request.ExecutionMode ?? ExecutionMode.Sequential,
+                    requestedWorkflowKind,
+                    user,
+                    ct);
+
+                if (plan.Steps.Count == 0)
+                    return Results.UnprocessableEntity("Planner could not decompose the goal into steps.");
+
                 var orch = await registry.CreateAsync(
                     user.UserId,
                     name,
                     request.Goal,
-                    plan.Steps,
+                    plan.WorkflowKind == OrchestrationWorkflowKind.Graph ? null : plan.Steps,
                     plannerModel: plan.Model,
                     plannerNotes: plan.Notes,
                     enableSelfCorrection: request.EnableSelfCorrection ?? true,
                     maxCorrectionAttempts: request.MaxCorrectionAttempts ?? 3,
-                    workflowKind: OrchestrationWorkflowKind.Structured,
-                    graph: null,
-                    executionMode: request.ExecutionMode ?? ExecutionMode.Sequential,
-                    triageStepNumber: request.TriageStepNumber ?? 1,
-                    groupChatMaxIterations: request.GroupChatMaxIterations ?? 10,
+                    workflowKind: plan.WorkflowKind,
+                    graph: plan.Graph,
+                    executionMode: plan.WorkflowKind == OrchestrationWorkflowKind.Graph
+                        ? ExecutionMode.Sequential
+                        : request.ExecutionMode ?? ExecutionMode.Sequential,
+                    triageStepNumber: plan.WorkflowKind == OrchestrationWorkflowKind.Graph
+                        ? 1
+                        : request.TriageStepNumber ?? 1,
+                    groupChatMaxIterations: plan.WorkflowKind == OrchestrationWorkflowKind.Graph
+                        ? 10
+                        : request.GroupChatMaxIterations ?? 10,
                     ct: ct);
 
                 return Results.Created($"/api/orchestrations/{orch.Id}", ToResponse(orch));
@@ -430,6 +438,7 @@ public static class OrchestrationEndpoints
         IReadOnlyList<int>? AgentIds,
         bool? EnableSelfCorrection,
         int? MaxCorrectionAttempts,
+        OrchestrationWorkflowKind? WorkflowKind,
         ExecutionMode? ExecutionMode,
         int? TriageStepNumber,
         int? GroupChatMaxIterations);

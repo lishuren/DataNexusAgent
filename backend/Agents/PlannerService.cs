@@ -9,10 +9,12 @@ namespace DataNexus.Agents;
 /// <summary>Result of a planner invocation: the generated steps plus model metadata.</summary>
 public sealed record PlanResult(
     IReadOnlyList<OrchestrationStep> Steps,
+    OrchestrationWorkflowKind WorkflowKind,
+    OrchestrationGraph? Graph,
     string Model,
     string? Notes);
 
-internal sealed class PlannerStructuredPlan
+internal sealed class PlannerStructuredStepsPlan
 {
     public string? Notes { get; init; }
     public List<PlannerStructuredStep> Steps { get; init; } = [];
@@ -25,6 +27,28 @@ internal sealed class PlannerStructuredStep
     public string Description { get; init; } = string.Empty;
     public int AgentId { get; init; }
     public string AgentName { get; init; } = string.Empty;
+}
+
+internal sealed class PlannerStructuredGraphPlan
+{
+    public string? Notes { get; init; }
+    public List<PlannerStructuredGraphNode> Nodes { get; init; } = [];
+    public List<PlannerStructuredGraphEdge> Edges { get; init; } = [];
+}
+
+internal sealed class PlannerStructuredGraphNode
+{
+    public int StepNumber { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public int AgentId { get; init; }
+    public string AgentName { get; init; } = string.Empty;
+}
+
+internal sealed class PlannerStructuredGraphEdge
+{
+    public int SourceStepNumber { get; init; }
+    public int TargetStepNumber { get; init; }
 }
 
 /// <summary>
@@ -67,12 +91,16 @@ public sealed class PlannerService(
         string? constraints,
         IReadOnlyList<int>? limitToAgentIds,
         ExecutionMode requestedExecutionMode,
+        OrchestrationWorkflowKind requestedWorkflowKind,
         UserContext user,
         CancellationToken ct = default)
     {
         logger.LogInformation(
-            "[User: {UserId}] Planner invoked for goal: {Goal} ({Mode})",
-            user.UserId, goal.Length > 120 ? goal[..120] + "…" : goal, requestedExecutionMode);
+            "[User: {UserId}] Planner invoked for goal: {Goal} ({WorkflowKind}, {Mode})",
+            user.UserId,
+            goal.Length > 120 ? goal[..120] + "…" : goal,
+            requestedWorkflowKind,
+            requestedExecutionMode);
 
         var allAgents = await agentRegistry.GetAgentsForUserAsync(user.UserId, ct);
         var candidates = limitToAgentIds is { Count: > 0 }
@@ -100,7 +128,7 @@ public sealed class PlannerService(
                 {
                     Instructions = PlannerInstructions,
                 },
-                AIContextProviders = [new PlannerContextProvider(candidates, requestedExecutionMode)],
+                AIContextProviders = [new PlannerContextProvider(candidates, requestedExecutionMode, requestedWorkflowKind)],
             },
             loggerFactory,
             services: null)
@@ -120,35 +148,75 @@ public sealed class PlannerService(
                 })
             .Build();
 
-        PlannerStructuredPlan payload;
-        try
+        if (requestedWorkflowKind == OrchestrationWorkflowKind.Graph)
         {
-            var response = await plannerAgent.RunAsync<PlannerStructuredPlan>(
+            var payload = await RunPlannerAsync<PlannerStructuredGraphPlan>(
+                plannerAgent,
                 userMessage,
-                serializerOptions: JsonOpts,
-                cancellationToken: ct);
-            payload = response.Result;
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or JsonException)
-        {
-            logger.LogWarning(ex, "[User: {UserId}] Planner returned invalid structured output", user.UserId);
-            throw new InvalidOperationException("Planner returned invalid structured output.", ex);
+                user.UserId,
+                ct);
+
+            var (steps, graph, notes) = NormalizeGraphPlanResponse(payload, candidates);
+
+            logger.LogInformation(
+                "[User: {UserId}] Planner produced {StepCount} graph nodes",
+                user.UserId,
+                steps.Count);
+
+            return new PlanResult(steps, OrchestrationWorkflowKind.Graph, graph, model, notes);
         }
 
-        var (steps, notes) = NormalizePlanResponse(payload, candidates);
+        var structuredPayload = await RunPlannerAsync<PlannerStructuredStepsPlan>(
+            plannerAgent,
+            userMessage,
+            user.UserId,
+            ct);
+
+        var (structuredSteps, structuredNotes) = NormalizeStructuredPlanResponse(structuredPayload, candidates);
 
         logger.LogInformation(
             "[User: {UserId}] Planner produced {StepCount} steps ({Mode})",
-            user.UserId, steps.Count, requestedExecutionMode);
+            user.UserId,
+            structuredSteps.Count,
+            requestedExecutionMode);
 
-        return new PlanResult(steps, model, notes);
+        return new PlanResult(
+            structuredSteps,
+            OrchestrationWorkflowKind.Structured,
+            null,
+            model,
+            structuredNotes);
     }
 
     /// <summary>
-    /// Normalizes the planner's structured output into orchestration steps and validates agent references.
+    /// Executes the planner against the requested structured schema.
     /// </summary>
-    private static (IReadOnlyList<OrchestrationStep> Steps, string? Notes) NormalizePlanResponse(
-        PlannerStructuredPlan response,
+    private async Task<TPlan> RunPlannerAsync<TPlan>(
+        AIAgent plannerAgent,
+        string userMessage,
+        string userId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var response = await plannerAgent.RunAsync<TPlan>(
+                userMessage,
+                serializerOptions: JsonOpts,
+                cancellationToken: ct);
+            return response.Result;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+        {
+            logger.LogWarning(ex, "[User: {UserId}] Planner returned invalid structured output", userId);
+            throw new InvalidOperationException("Planner returned invalid structured output.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Normalizes the planner's structured step output into orchestration steps and validates agent references.
+    /// </summary>
+    private static (IReadOnlyList<OrchestrationStep> Steps, string? Notes) NormalizeStructuredPlanResponse(
+        PlannerStructuredStepsPlan response,
         IReadOnlyList<AgentDefinition> agents)
     {
         if (response.Steps.Count == 0)
@@ -183,5 +251,132 @@ public sealed class PlannerService(
         }
 
         return (steps, string.IsNullOrWhiteSpace(response.Notes) ? null : response.Notes.Trim());
+    }
+
+    /// <summary>
+    /// Normalizes the planner's graph output into the persisted DAG representation.
+    /// </summary>
+    private static (IReadOnlyList<OrchestrationStep> Steps, OrchestrationGraph Graph, string? Notes) NormalizeGraphPlanResponse(
+        PlannerStructuredGraphPlan response,
+        IReadOnlyList<AgentDefinition> agents)
+    {
+        if (response.Nodes.Count == 0)
+            throw new InvalidOperationException("Planner response contained no graph nodes.");
+
+        var agentLookup = agents.ToDictionary(agent => agent.Id);
+        var orderedNodes = response.Nodes
+            .OrderBy(node => node.StepNumber)
+            .ToList();
+
+        var layout = BuildGraphLayout(orderedNodes, response.Edges);
+        var nodeIdByStepNumber = new Dictionary<int, string>();
+        var graphNodes = new List<OrchestrationGraphNode>(orderedNodes.Count);
+
+        foreach (var node in orderedNodes)
+        {
+            if (node.StepNumber <= 0)
+                throw new InvalidOperationException("Graph nodes must use positive step numbers.");
+
+            if (!nodeIdByStepNumber.TryAdd(node.StepNumber, $"node-{node.StepNumber}"))
+                throw new InvalidOperationException($"Duplicate graph node stepNumber={node.StepNumber}.");
+
+            if (!agentLookup.TryGetValue(node.AgentId, out var agentDef))
+                throw new InvalidOperationException(
+                    $"Planner referenced unknown agentId={node.AgentId}.");
+
+            var (positionX, positionY) = layout.GetValueOrDefault(
+                node.StepNumber,
+                (140d + graphNodes.Count * 220d, 120d));
+
+            graphNodes.Add(new OrchestrationGraphNode
+            {
+                Id = nodeIdByStepNumber[node.StepNumber],
+                DisplayOrder = graphNodes.Count + 1,
+                Title = string.IsNullOrWhiteSpace(node.Title)
+                    ? $"Node {graphNodes.Count + 1}"
+                    : node.Title.Trim(),
+                Description = string.IsNullOrWhiteSpace(node.Description)
+                    ? $"Use {agentDef.Name} to advance the workflow."
+                    : node.Description.Trim(),
+                AgentId = node.AgentId,
+                AgentName = agentDef.Name,
+                IsEdited = false,
+                PromptOverride = null,
+                Parameters = null,
+                PositionX = positionX,
+                PositionY = positionY,
+            });
+        }
+
+        var graphEdges = new List<OrchestrationGraphEdge>(response.Edges.Count);
+        foreach (var (edge, index) in response.Edges.Select((item, idx) => (item, idx)))
+        {
+            if (!nodeIdByStepNumber.TryGetValue(edge.SourceStepNumber, out var sourceNodeId))
+                throw new InvalidOperationException(
+                    $"Graph edge references unknown source step {edge.SourceStepNumber}.");
+
+            if (!nodeIdByStepNumber.TryGetValue(edge.TargetStepNumber, out var targetNodeId))
+                throw new InvalidOperationException(
+                    $"Graph edge references unknown target step {edge.TargetStepNumber}.");
+
+            graphEdges.Add(new OrchestrationGraphEdge
+            {
+                Id = $"edge-{index + 1}",
+                SourceNodeId = sourceNodeId,
+                TargetNodeId = targetNodeId,
+            });
+        }
+
+        var graph = OrchestrationGraphRules.NormalizeGraph(new OrchestrationGraph(graphNodes, graphEdges));
+        return (graph.ToStructuredSteps(), graph, string.IsNullOrWhiteSpace(response.Notes) ? null : response.Notes.Trim());
+    }
+
+    private static Dictionary<int, (double X, double Y)> BuildGraphLayout(
+        IReadOnlyList<PlannerStructuredGraphNode> nodes,
+        IReadOnlyList<PlannerStructuredGraphEdge> edges)
+    {
+        var stepNumbers = nodes.Select(node => node.StepNumber).ToList();
+        var indegree = stepNumbers.ToDictionary(stepNumber => stepNumber, _ => 0);
+        var adjacency = stepNumbers.ToDictionary(stepNumber => stepNumber, _ => new List<int>());
+
+        foreach (var edge in edges)
+        {
+            if (!indegree.ContainsKey(edge.SourceStepNumber) || !indegree.ContainsKey(edge.TargetStepNumber))
+                continue;
+
+            adjacency[edge.SourceStepNumber].Add(edge.TargetStepNumber);
+            indegree[edge.TargetStepNumber]++;
+        }
+
+        var levels = stepNumbers.ToDictionary(stepNumber => stepNumber, _ => 0);
+        var queue = new Queue<int>(
+            stepNumbers
+                .Where(stepNumber => indegree[stepNumber] == 0)
+                .OrderBy(stepNumber => stepNumber));
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var target in adjacency[current].OrderBy(stepNumber => stepNumber))
+            {
+                levels[target] = Math.Max(levels[target], levels[current] + 1);
+                indegree[target]--;
+                if (indegree[target] == 0)
+                    queue.Enqueue(target);
+            }
+        }
+
+        var rowByLevel = new Dictionary<int, int>();
+        var positions = new Dictionary<int, (double X, double Y)>();
+
+        foreach (var node in nodes.OrderBy(node => levels.GetValueOrDefault(node.StepNumber)).ThenBy(node => node.StepNumber))
+        {
+            var level = levels.GetValueOrDefault(node.StepNumber);
+            var row = rowByLevel.GetValueOrDefault(level);
+            positions[node.StepNumber] = (140d + level * 280d, 120d + row * 180d);
+            rowByLevel[level] = row + 1;
+        }
+
+        return positions;
     }
 }

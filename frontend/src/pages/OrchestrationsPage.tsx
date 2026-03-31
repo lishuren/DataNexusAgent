@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Agent, ExecutionMode, Orchestration, ProcessingResult } from "@/types/api";
+import type { Agent, ExecutionMode, Orchestration, OrchestrationWorkflowKind, ProcessingResult } from "@/types/api";
 import {
   listAgents,
   listOrchestrations,
@@ -23,6 +23,16 @@ const ORCHESTRATION_MODE_HELP: Record<ExecutionMode, string> = {
   GroupChat: "All steps participate in a round-robin discussion before the orchestration completes.",
 };
 
+const WORKFLOW_KIND_OPTIONS: Array<{ value: OrchestrationWorkflowKind; label: string }> = [
+  { value: "Structured", label: "Structured List" },
+  { value: "Graph", label: "Graph DAG" },
+];
+
+const WORKFLOW_KIND_HELP: Record<OrchestrationWorkflowKind, string> = {
+  Structured: "Planner returns a reviewable ordered list of steps. Execution mode controls how those steps run later.",
+  Graph: "Planner returns a DAG draft directly, with branches and joins defined in the initial plan instead of being added later in the editor.",
+};
+
 export default function OrchestrationsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
@@ -31,6 +41,7 @@ export default function OrchestrationsPage() {
   // Planner form state
   const [planGoal, setPlanGoal] = useState("");
   const [planConstraints, setPlanConstraints] = useState("");
+  const [planWorkflowKind, setPlanWorkflowKind] = useState<OrchestrationWorkflowKind>("Structured");
   const [planExecutionMode, setPlanExecutionMode] = useState<ExecutionMode>("Sequential");
   const [planGroupChatMaxIterations, setPlanGroupChatMaxIterations] = useState(10);
   const [planning, setPlanning] = useState(false);
@@ -61,15 +72,21 @@ export default function OrchestrationsPage() {
       await planOrchestration({
         goal: planGoal.trim(),
         constraints: planConstraints.trim() || undefined,
-        executionMode: planExecutionMode,
-        triageStepNumber: 1,
-        groupChatMaxIterations: planExecutionMode === "GroupChat" ? planGroupChatMaxIterations : undefined,
+        workflowKind: planWorkflowKind,
+        executionMode: planWorkflowKind === "Structured" ? planExecutionMode : undefined,
+        triageStepNumber: planWorkflowKind === "Structured" && planExecutionMode === "Handoff" ? 1 : undefined,
+        groupChatMaxIterations: planWorkflowKind === "Structured" && planExecutionMode === "GroupChat"
+          ? planGroupChatMaxIterations
+          : undefined,
       });
       setPlanGoal("");
       setPlanConstraints("");
+      setPlanWorkflowKind("Structured");
       setPlanExecutionMode("Sequential");
       setPlanGroupChatMaxIterations(10);
-      setPlanMsg("Plan generated! Review it below.");
+      setPlanMsg(planWorkflowKind === "Graph"
+        ? "Graph draft generated! Review it below."
+        : "Plan generated! Review it below.");
       refresh();
     } catch (e) {
       setPlanMsg(e instanceof Error ? e.message : String(e));
@@ -93,7 +110,7 @@ export default function OrchestrationsPage() {
         <h2>🧠 AI Orchestration Planner</h2>
         <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
           Describe a goal and the AI will decompose it into an initial agent workflow.
-          Draft orchestrations can stay structured or switch into a graph editor for branching DAG flows before approval.
+          The planner can return either a structured draft or a graph DAG directly before approval.
         </p>
         <textarea
           placeholder={"Describe your goal, e.g.\n• Parse my sales Excel, validate data quality, push clean records to the CRM API\n• Extract invoice line items, convert currencies, generate a summary report"}
@@ -110,6 +127,22 @@ export default function OrchestrationsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginBottom: "0.5rem" }}>
           <div>
             <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Draft Shape
+            </label>
+            <select
+              value={planWorkflowKind}
+              onChange={(e) => setPlanWorkflowKind(e.target.value as OrchestrationWorkflowKind)}
+              style={{ marginBottom: 0 }}
+            >
+              {WORKFLOW_KIND_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {planWorkflowKind === "Structured" && (
+            <div>
+            <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
               Execution Mode
             </label>
             <select
@@ -121,9 +154,10 @@ export default function OrchestrationsPage() {
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-          </div>
+            </div>
+          )}
 
-          {planExecutionMode === "GroupChat" && (
+          {planWorkflowKind === "Structured" && planExecutionMode === "GroupChat" && (
             <div>
               <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                 Max Chat Turns
@@ -140,7 +174,8 @@ export default function OrchestrationsPage() {
           )}
         </div>
         <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
-          {ORCHESTRATION_MODE_HELP[planExecutionMode]}
+          {WORKFLOW_KIND_HELP[planWorkflowKind]}
+          {planWorkflowKind === "Structured" ? ` ${ORCHESTRATION_MODE_HELP[planExecutionMode]}` : ""}
         </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
           <button
@@ -151,7 +186,7 @@ export default function OrchestrationsPage() {
             {planning ? "Planning…" : "🧠 Generate Plan"}
           </button>
           <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Uses GPT-4o to decompose your goal into agent steps
+            Uses GPT-4o to generate a structured plan or graph draft
           </span>
         </div>
         {planMsg && (

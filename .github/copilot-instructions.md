@@ -150,16 +150,17 @@ graph TB
     hard timeout cap (`ExternalAgents:MaxTimeoutSeconds`), no shell invocation (`UseShellExecute=false`).
   - Config section: `ExternalAgents` in `appsettings.json`.
 - **Orchestrations** (LLM-planned workflows): Stored in PostgreSQL (`orchestrations` table) via EF Core.
-  `PlannerService` uses a MAF `ChatClientAgent` to decompose a user goal into ordered agent steps.
-  Draft orchestrations can remain as structured workflows or be converted into a manual DAG graph.
+  `PlannerService` uses a MAF `ChatClientAgent` to decompose a user goal into either an ordered step list
+  or a planner-generated DAG draft.
+  Draft orchestrations can be created directly as structured workflows or graph workflows.
   The plan is saved as a `Draft` and requires explicit user approval before execution.
   - **Status lifecycle**: `Draft → Approved → Running → Completed/Failed` or `Draft → Rejected`.
     Users can also `ResetToDraft` to revise a rejected or failed plan.
   - **PlannerService**: Creates a `ChatClientAgent` with AF audit-logging middleware, requests
-    typed structured output via `RunAsync<T>()`, and injects the live agent catalog plus execution-mode
-    guidance through an `AIContextProvider` instead of hand-stitching the full planner prompt.
+    typed structured output via `RunAsync<T>()`, and injects the live agent catalog plus workflow-kind /
+    execution guidance through an `AIContextProvider` instead of hand-stitching the full planner prompt.
   - **Approval gate**: Only `Approved` orchestrations can execute. The frontend shows the draft,
-    lets users swap agents, override prompts, remove steps, or switch the draft into a graph editor
+    lets users swap agents, override prompts, remove steps, or refine a generated graph in the graph editor
     for branching DAG flows before approval or rejection.
   - **Execution**: `RunOrchestrationAsync` resolves agent definitions (with any prompt overrides),
     builds AF agents via `CreateOrchestrationStepAgentAsync`, and executes either the structured
@@ -412,8 +413,8 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
    deliberate security boundary: skill authors (any user) must not be able to trigger privileged
    actions (API calls, DB writes) that only agent-configured plugins should perform.
 9. **LLM-planned orchestrations with approval gate** — `PlannerService` (a MAF `ChatClientAgent`)
-   decomposes user goals into agent steps. Plans are saved as `Draft` and require explicit user
-   approval before execution. Users can swap agents, override prompts, and remove steps.
+  decomposes user goals into structured step lists or graph drafts. Plans are saved as `Draft` and require explicit user
+  approval before execution. Users can swap agents, override prompts, remove steps, or refine graph topology.
   Planner runs use MAF structured output plus `AIContextProvider`-supplied planner context, and approved
   orchestrations execute via `AgentWorkflowBuilder.Build*`, `WorkflowBuilder`, and `InProcessExecution`
   primitives. Published orchestrations are shareable via the marketplace.
