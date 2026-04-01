@@ -20,7 +20,7 @@ import {
   cloneOrchestration,
 } from "@/services/api";
 import { LiveRunBox } from "@/components/LiveRunBox";
-import { OrchestrationGraphEditor } from "@/components/OrchestrationGraphEditor";
+import { OrchestrationFlowCanvas } from "@/components/OrchestrationFlowCanvas";
 import {
   buildGraphFromSteps,
   cloneGraph,
@@ -497,7 +497,7 @@ export function OrchestrationReview({
 
       {workflowKind === "Graph" && graph ? (
         <div style={{ marginBottom: "0.75rem" }}>
-          <OrchestrationGraphEditor
+          <OrchestrationFlowCanvas
             graph={graph}
             agents={agents}
             readOnly={!isGraphEditing}
