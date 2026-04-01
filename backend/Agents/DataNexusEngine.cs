@@ -15,7 +15,6 @@ public sealed class DataNexusEngine(
     AgentRegistry agentRegistry,
     InputProcessorPlugin inputPlugin,
     OutputIntegratorPlugin outputPlugin,
-    ExternalProcessRunner externalRunner,
     ILogger<DataNexusEngine> logger) : IAgentExecutionRuntime
 {
     private const int MaxCorrectionAttempts = 3;
@@ -41,7 +40,7 @@ public sealed class DataNexusEngine(
             return await RunSingleAgentAsync(agent, request, user, ct);
         }
 
-        // Default: classic two-agent relay (Analyst → Executor)
+        // Default: two-agent AF workflow (Analyst → Executor)
         return await RunDefaultPipelineAsync(request, user, ct);
     }
 
@@ -124,7 +123,7 @@ public sealed class DataNexusEngine(
         foreach (var agentDef in agentDefs)
         {
             var agent = await agentFactory.CreatePipelineAgentAsync(
-                agentDef, user, inputPlugin, outputPlugin, pipeline.Parameters, ct);
+                agentDef, user, inputPlugin, outputPlugin, pipeline.OutputDestination, pipeline.Parameters, ct);
             agents.Add(agent);
         }
 
@@ -229,7 +228,7 @@ public sealed class DataNexusEngine(
         foreach (var agentDef in agentDefs)
         {
             var agent = await agentFactory.CreatePipelineAgentAsync(
-                agentDef, user, inputPlugin, outputPlugin, pipeline.Parameters, ct);
+                agentDef, user, inputPlugin, outputPlugin, pipeline.OutputDestination, pipeline.Parameters, ct);
             agents.Add(agent);
         }
 
@@ -283,29 +282,21 @@ public sealed class DataNexusEngine(
         UserContext user,
         CancellationToken ct)
     {
-        // Route by execution type
-        if (agent.ExecutionType == AgentExecutionType.External)
-            return await externalRunner.RunAsync(agent, request, user, ct);
-
-        return await RunLlmAgentAsync(agent, request, user, ct);
-    }
-
-    private async Task<ProcessingResult> RunLlmAgentAsync(
-        AgentDefinition agent,
-        ProcessingRequest request,
-        UserContext user,
-        CancellationToken ct)
-    {
         var agentResult = await agentFactory.CreateRuntimeAgentAsync(
             agent,
             user,
             inputPlugin,
             outputPlugin,
+            request.OutputDestination,
             request.Parameters,
             ct: ct);
 
         var response = await agentResult.Agent.RunAsync(request.InputSource, cancellationToken: ct);
-        return BuildLlmAgentResult(agent, request, agentResult, response.Text ?? string.Empty, user);
+        var responseText = response.Text ?? string.Empty;
+
+        return agent.ExecutionType == AgentExecutionType.External
+            ? BuildExternalAgentResult(agent, agentResult, responseText)
+            : BuildLlmAgentResult(agent, request, agentResult, responseText, user);
     }
 
     private async IAsyncEnumerable<ProcessingStreamEvent> StreamSingleAgentAsync(
@@ -314,51 +305,11 @@ public sealed class DataNexusEngine(
         UserContext user,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        if (agent.ExecutionType == AgentExecutionType.External)
-        {
-            await foreach (var streamEvent in StreamExternalAgentAsync(agent, request, user, ct))
-                yield return streamEvent;
-
-            yield break;
-        }
-
-        await foreach (var streamEvent in StreamLlmAgentAsync(agent, request, user, ct))
+        await foreach (var streamEvent in StreamRuntimeAgentAsync(agent, request, user, ct))
             yield return streamEvent;
     }
 
-    private async IAsyncEnumerable<ProcessingStreamEvent> StreamExternalAgentAsync(
-        AgentDefinition agent,
-        ProcessingRequest request,
-        UserContext user,
-        [EnumeratorCancellation] CancellationToken ct)
-    {
-        yield return ProcessingStreamEvent.Status($"External agent '{agent.Name}' is running.", agent.Name);
-
-        ProcessingResult result;
-        try
-        {
-            result = await externalRunner.RunAsync(agent, request, user, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(ex, "[User: {UserId}] External agent '{Agent}' failed while streaming", user.UserId, agent.Name);
-            result = ProcessingResult.Fail($"External agent '{agent.Name}' failed: {ex.Message}");
-        }
-
-        var outputText = result.Data switch
-        {
-            string text => text,
-            null => null,
-            _ => result.Data.ToString(),
-        };
-
-        if (!string.IsNullOrWhiteSpace(outputText))
-            yield return ProcessingStreamEvent.Chunk(outputText, agent.Name);
-
-        yield return ProcessingStreamEvent.ResultEvent(result);
-    }
-
-    private async IAsyncEnumerable<ProcessingStreamEvent> StreamLlmAgentAsync(
+    private async IAsyncEnumerable<ProcessingStreamEvent> StreamRuntimeAgentAsync(
         AgentDefinition agent,
         ProcessingRequest request,
         UserContext user,
@@ -373,6 +324,7 @@ public sealed class DataNexusEngine(
                 user,
                 inputPlugin,
                 outputPlugin,
+                request.OutputDestination,
                 request.Parameters,
                 ct: ct);
         }
@@ -408,7 +360,9 @@ public sealed class DataNexusEngine(
             agentResult.Trace.RawLlmResponse = streamedResponse.ToString();
 
         yield return ProcessingStreamEvent.ResultEvent(
-            BuildLlmAgentResult(agent, request, agentResult, streamedResponse.ToString(), user));
+            agent.ExecutionType == AgentExecutionType.External
+                ? BuildExternalAgentResult(agent, agentResult, streamedResponse.ToString())
+                : BuildLlmAgentResult(agent, request, agentResult, streamedResponse.ToString(), user));
     }
 
     private ProcessingResult BuildLlmAgentResult(
@@ -419,17 +373,9 @@ public sealed class DataNexusEngine(
         UserContext user)
     {
         var trace = agentResult.Trace;
-
-        if (trace.InputPluginErrorMessage is not null)
-            return ProcessingResult.Fail($"Input parsing failed: {trace.InputPluginErrorMessage}");
-
-        if (trace.OutputPluginErrorMessage is not null)
-        {
-            if (string.Equals(trace.OutputPluginErrorCode, "SCHEMA_MISMATCH", StringComparison.Ordinal))
-                return ProcessingResult.Fail($"Schema mismatch: {trace.OutputPluginErrorMessage}");
-
-            return ProcessingResult.Fail($"Output failed: {trace.OutputPluginErrorMessage}");
-        }
+        var pluginFailure = BuildPluginFailureResult(trace);
+        if (pluginFailure is not null)
+            return pluginFailure;
 
         var llmResponse = trace.RawLlmResponse ?? fallbackResponseText;
 
@@ -464,10 +410,50 @@ public sealed class DataNexusEngine(
             debug: debugInfo);
     }
 
+    private static ProcessingResult? BuildPluginFailureResult(AgentExecutionTrace trace)
+    {
+        if (trace.InputPluginErrorMessage is not null)
+            return ProcessingResult.Fail($"Input parsing failed: {trace.InputPluginErrorMessage}");
+
+        if (trace.OutputPluginErrorMessage is not null)
+        {
+            if (string.Equals(trace.OutputPluginErrorCode, "SCHEMA_MISMATCH", StringComparison.Ordinal))
+                return ProcessingResult.Fail($"Schema mismatch: {trace.OutputPluginErrorMessage}");
+
+            return ProcessingResult.Fail($"Output failed: {trace.OutputPluginErrorMessage}");
+        }
+
+        return null;
+    }
+
+    private static ProcessingResult BuildExternalAgentResult(
+        AgentDefinition agent,
+        CreateRuntimeAgentResult agentResult,
+        string fallbackResponseText)
+    {
+        var pluginFailure = BuildPluginFailureResult(agentResult.Trace);
+        if (pluginFailure is not null)
+            return pluginFailure;
+
+        var externalResult = agentResult.ExternalTrace?.LastResult;
+        if (externalResult is not null)
+        {
+            if (externalResult.Success && externalResult.Data is null && !string.IsNullOrWhiteSpace(fallbackResponseText))
+                return externalResult with { Data = fallbackResponseText };
+
+            return externalResult;
+        }
+
+        if (string.IsNullOrWhiteSpace(fallbackResponseText))
+            return ProcessingResult.Fail($"External agent '{agent.Name}' completed without a response.");
+
+        return ProcessingResult.Ok($"External agent '{agent.Name}' completed.", fallbackResponseText);
+    }
+
     private static string TruncatePreview(string value, int maxLength = 1200) =>
         value.Length > maxLength ? value[..maxLength] + "\n…(truncated)" : value;
 
-    /// <summary>The original two-agent relay for backward compatibility, now using AF agents.</summary>
+    /// <summary>Default two-agent relay built as an AF workflow when no explicit agent is selected.</summary>
     private async Task<ProcessingResult> RunDefaultPipelineAsync(
         ProcessingRequest request,
         UserContext user,
@@ -482,9 +468,9 @@ public sealed class DataNexusEngine(
 
         // Build AF agents with plugins for both steps
         var analystAgent = await agentFactory.CreatePipelineAgentAsync(
-            analyst, user, inputPlugin, outputPlugin, request.Parameters, ct);
+            analyst, user, inputPlugin, outputPlugin, request.OutputDestination, request.Parameters, ct);
         var executorAgent = await agentFactory.CreatePipelineAgentAsync(
-            executor, user, inputPlugin, outputPlugin, request.Parameters, ct);
+            executor, user, inputPlugin, outputPlugin, request.OutputDestination, request.Parameters, ct);
 
         // Build sequential workflow via AF
         var agentList = new List<AIAgent> { analystAgent, executorAgent };
@@ -504,15 +490,14 @@ public sealed class DataNexusEngine(
             var run = await InProcessExecution.RunAsync(workflow, request.InputSource, cancellationToken: ct);
             output = ExtractWorkflowOutput(run);
 
-            if (output is not null && !PluginError.IsPluginError(output)
-                && !output.Contains("Schema mismatch"))
+            if (output is not null && !PluginError.IsPluginError(output))
                 break;
         }
 
         if (output is null)
             return ProcessingResult.Fail("Default pipeline produced no output");
 
-        if (PluginError.IsPluginError(output) || output.Contains("Schema mismatch"))
+        if (PluginError.IsPluginError(output))
             return ProcessingResult.Fail($"Default pipeline failed: {output}");
 
         List<string> warnings = [];
@@ -539,9 +524,9 @@ public sealed class DataNexusEngine(
         }
 
         var analystAgent = await agentFactory.CreatePipelineAgentAsync(
-            analyst, user, inputPlugin, outputPlugin, request.Parameters, ct);
+            analyst, user, inputPlugin, outputPlugin, request.OutputDestination, request.Parameters, ct);
         var executorAgent = await agentFactory.CreatePipelineAgentAsync(
-            executor, user, inputPlugin, outputPlugin, request.Parameters, ct);
+            executor, user, inputPlugin, outputPlugin, request.OutputDestination, request.Parameters, ct);
 
         var workflow = AgentWorkflowBuilder.BuildSequential(
             "DefaultPipeline",
@@ -604,10 +589,11 @@ public sealed class DataNexusEngine(
                 user.UserId, orchestration.Name, step.StepNumber, agentDef.Name);
 
             var stepParams = step.Parameters as IReadOnlyDictionary<string, string>;
+            var stepOutputDestination = ResolveOutputDestination(stepParams);
 
             var afAgent = await agentFactory.CreateOrchestrationStepAgentAsync(
                 agentDef, user, inputPlugin, outputPlugin,
-                step.PromptOverride, stepParams, ct);
+                stepOutputDestination, step.PromptOverride, stepParams, ct);
             afAgents.Add(afAgent);
         }
 
@@ -706,11 +692,13 @@ public sealed class DataNexusEngine(
         foreach (var (step, agentDef) in stepAgentDefs)
         {
             var stepParams = step.Parameters as IReadOnlyDictionary<string, string>;
+            var stepOutputDestination = ResolveOutputDestination(stepParams);
             var afAgent = await agentFactory.CreateOrchestrationStepAgentAsync(
                 agentDef,
                 user,
                 inputPlugin,
                 outputPlugin,
+                stepOutputDestination,
                 step.PromptOverride,
                 stepParams,
                 ct);
@@ -782,11 +770,13 @@ public sealed class DataNexusEngine(
                 user.UserId, orchestration.Name, node.Id, agentDef.Name);
 
             var nodeParams = node.Parameters as IReadOnlyDictionary<string, string>;
+            var nodeOutputDestination = ResolveOutputDestination(nodeParams);
             var afAgent = await agentFactory.CreateOrchestrationStepAgentAsync(
                 agentDef,
                 user,
                 inputPlugin,
                 outputPlugin,
+                nodeOutputDestination,
                 node.PromptOverride,
                 nodeParams,
                 ct);
@@ -847,11 +837,13 @@ public sealed class DataNexusEngine(
             }
 
             var nodeParams = node.Parameters as IReadOnlyDictionary<string, string>;
+            var nodeOutputDestination = ResolveOutputDestination(nodeParams);
             var afAgent = await agentFactory.CreateOrchestrationStepAgentAsync(
                 agentDef,
                 user,
                 inputPlugin,
                 outputPlugin,
+                nodeOutputDestination,
                 node.PromptOverride,
                 nodeParams,
                 ct);
@@ -1109,6 +1101,45 @@ public sealed class DataNexusEngine(
             IEnumerable<ChatMessage> messages => messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Text,
             _ => result.ToString(),
         };
+
+    private static string ResolveOutputDestination(IReadOnlyDictionary<string, string>? parameters)
+    {
+        if (parameters is null)
+            return "stdout";
+
+        if (TryGetParameterValue(parameters, "OutputDestination", out var outputDestination))
+            return outputDestination;
+
+        if (TryGetParameterValue(parameters, "Destination", out var destination))
+            return destination;
+
+        return "stdout";
+    }
+
+    private static bool TryGetParameterValue(
+        IReadOnlyDictionary<string, string> parameters,
+        string key,
+        out string value)
+    {
+        if (parameters.TryGetValue(key, out var directValue) && !string.IsNullOrWhiteSpace(directValue))
+        {
+            value = directValue;
+            return true;
+        }
+
+        foreach (var pair in parameters)
+        {
+            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(pair.Value))
+            {
+                value = pair.Value;
+                return true;
+            }
+        }
+
+        value = string.Empty;
+        return false;
+    }
 
     // ── MAF workflow factory helpers ─────────────────────────────────────────────
 

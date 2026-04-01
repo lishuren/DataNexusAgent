@@ -601,11 +601,11 @@ export function CreateAgentForm({ onCreated, agent, onCancel }: CreateAgentFormP
             </div>
           </div>
           <div className="protocol-info" style={{ marginBottom: "0.75rem" }}>
-            <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>📋 stdin/stdout JSON Protocol</div>
+            <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>📋 Streamed NDJSON Protocol</div>
             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
-              Your script receives <code>{`{"input":"...","parameters":{...},"userId":"..."}`}</code> on <strong>stdin</strong>.<br />
-              It must write <code>{`{"success":true,"message":"...","data":...}`}</code> to <strong>stdout</strong>.<br />
-              Exit code 0 = success, non-zero = failure.
+              Your script receives <code>{`{"protocolVersion":2,"agentId":123,"agentName":"...","userId":"...","input":"...","outputDestination":"...","parameters":{...}}`}</code> on <strong>stdin</strong>.<br />
+              It may stream <code>{`{"type":"status","message":"..."}`}</code> and <code>{`{"type":"chunk","text":"..."}`}</code> lines to <strong>stdout</strong>, then must finish with <code>{`{"type":"result","success":true,"message":"...","data":...}`}</code>.<br />
+              Exit code 0 is still required for success.
             </div>
           </div>
         </>

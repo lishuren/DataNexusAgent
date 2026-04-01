@@ -145,7 +145,7 @@ graph TB
   - **Default mode** — if no `AgentId` specified, falls back to Analyst → Integrator workflow via `BuildSequential`.
 - **External Agent Runtime** (`ExternalProcessRunner`):
   - Executes CLI / Python / Node / shell scripts as child processes.
-  - **Protocol**: JSON on stdin → JSON on stdout. Exit code 0 = success.
+  - **Protocol**: JSON request on stdin → UTF-8 NDJSON events on stdout (`status`, `chunk`, `result`). Exit code 0 = success, but the process must still emit a final `result` event.
   - **Security**: command allowlist (`ExternalAgents:AllowedCommands`), working directory allowlist,
     hard timeout cap (`ExternalAgents:MaxTimeoutSeconds`), no shell invocation (`UseShellExecute=false`).
   - Config section: `ExternalAgents` in `appsettings.json`.
@@ -406,7 +406,7 @@ The Vite dev server on `:5173` proxies `/api` requests to the backend on `:5000`
 6. **Dynamic UI per agent** — each agent defines a `uiSchema` JSON array. The frontend renders
    the appropriate form fields when the user selects that agent on the Process page.
 7. **External agent runtime** — users can register CLI tools, Python scripts, or Node programs
-   as agents. The engine executes them as child processes with a stdin/stdout JSON protocol,
+  as agents. The engine executes them as child processes with a stdin JSON request and stdout NDJSON event protocol,
    guarded by a command allowlist, timeout cap, and working-directory allowlist.
 8. **Skills ≠ Plugins (strict separation)** — skills are passive `SKILL.md` packages surfaced through MAF context providers;
    plugins are executable C# code that performs I/O. Skills cannot invoke plugins. This is a

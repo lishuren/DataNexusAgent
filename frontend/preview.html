@@ -771,11 +771,11 @@ Summarized regional performance, outliers, and quarter-over-quarter trends for l
               </div>
             </div>
             <div style="padding:0.75rem; background:rgba(224,120,80,0.05); border:1px solid var(--border); border-radius:0.5rem; margin-bottom:0.75rem;">
-              <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.25rem;">📋 stdin/stdout JSON Protocol</div>
+              <div style="font-size:0.8rem; font-weight:600; margin-bottom:0.25rem;">📋 Streamed NDJSON Protocol</div>
               <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.5;">
-                Your script receives <code style="color:var(--primary);">{"input":"...","parameters":{...},"userId":"..."}</code> on <strong>stdin</strong>.<br/>
-                It must write <code style="color:var(--primary);">{"success":true,"message":"...","data":...}</code> to <strong>stdout</strong>.<br/>
-                Exit code 0 = success, non-zero = failure.
+                Your script receives <code style="color:var(--primary);">{"protocolVersion":2,"agentId":123,"agentName":"...","userId":"...","input":"...","outputDestination":"...","parameters":{...}}</code> on <strong>stdin</strong>.<br/>
+                It may stream <code style="color:var(--primary);">{"type":"status","message":"..."}</code> and <code style="color:var(--primary);">{"type":"chunk","text":"..."}</code> lines to <strong>stdout</strong>, then must finish with <code style="color:var(--primary);">{"type":"result","success":true,"message":"...","data":...}</code>.<br/>
+                Exit code 0 is still required for success.
               </div>
             </div>
           </div>

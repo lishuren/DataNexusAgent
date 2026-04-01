@@ -5,6 +5,10 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataNexus", "backend\DataNexus.csproj", "{D6593C2E-8213-D55D-7F93-675D8FBCB885}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExternalAgentFixture", "tests\ExternalAgentFixture\ExternalAgentFixture.csproj", "{5A29B93E-7DAB-4EE7-912C-7A6DE0C8D2A4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataNexus.Tests", "tests\DataNexus.Tests\DataNexus.Tests.csproj", "{9C64A7F2-5E39-4A9F-A83A-CB72BE31F5B1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +19,14 @@ Global
 		{D6593C2E-8213-D55D-7F93-675D8FBCB885}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D6593C2E-8213-D55D-7F93-675D8FBCB885}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D6593C2E-8213-D55D-7F93-675D8FBCB885}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A29B93E-7DAB-4EE7-912C-7A6DE0C8D2A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A29B93E-7DAB-4EE7-912C-7A6DE0C8D2A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A29B93E-7DAB-4EE7-912C-7A6DE0C8D2A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A29B93E-7DAB-4EE7-912C-7A6DE0C8D2A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9C64A7F2-5E39-4A9F-A83A-CB72BE31F5B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9C64A7F2-5E39-4A9F-A83A-CB72BE31F5B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9C64A7F2-5E39-4A9F-A83A-CB72BE31F5B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9C64A7F2-5E39-4A9F-A83A-CB72BE31F5B1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

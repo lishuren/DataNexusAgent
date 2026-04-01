@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using DataNexus.Core;
 using DataNexus.Identity;
 using DataNexus.Models;
@@ -12,8 +13,8 @@ namespace DataNexus.Agents;
 /// Executes external (CLI / script) agents as child processes.
 ///
 /// Protocol:
-///   • stdin  — receives a JSON object with { input, parameters, userId }.
-///   • stdout — must return a JSON object with { success, message, data? }.
+///   • stdin  — receives a JSON object describing the request context.
+///   • stdout — emits UTF-8 NDJSON events, one JSON object per line.
 ///   • stderr — captured for diagnostics on failure.
 ///   • Exit code 0 = success, non-zero = failure.
 ///
@@ -27,6 +28,7 @@ public sealed class ExternalProcessRunner(
     IOptions<ExternalAgentOptions> options,
     ILogger<ExternalProcessRunner> logger)
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ExternalAgentOptions _opts = options.Value;
 
     public async Task<ProcessingResult> RunAsync(
@@ -35,124 +37,46 @@ public sealed class ExternalProcessRunner(
         UserContext user,
         CancellationToken ct)
     {
-        // ── Guard: feature enabled ──
-        if (!_opts.Enabled)
-            return ProcessingResult.Fail("External agent execution is disabled by configuration.");
+        var transcript = new StringBuilder();
+        ProcessingResult? finalResult = null;
 
-        // ── Guard: command allowlist ──
-        var command = agent.Command
-            ?? throw new InvalidOperationException($"External agent '{agent.Name}' has no Command configured.");
-
-        if (!IsCommandAllowed(command))
+        await foreach (var streamEvent in RunStreamingAsync(agent, request, user, ct))
         {
-            logger.LogWarning(
-                "[User: {UserId}] Blocked external agent '{Agent}': command '{Command}' not in allowlist",
-                user.UserId, agent.Name, command);
-            return ProcessingResult.Fail($"Command '{command}' is not permitted.");
+            if (!string.IsNullOrWhiteSpace(streamEvent.Text))
+                transcript.Append(streamEvent.Text);
+
+            if (streamEvent.Result is not null)
+                finalResult = streamEvent.Result;
         }
 
-        // ── Guard: working directory ──
-        string? workDir = ResolveWorkingDirectory(agent.WorkingDirectory);
-
-        // ── Build process ──
-        var timeout = Math.Clamp(agent.TimeoutSeconds, 1, _opts.MaxTimeoutSeconds);
-
-        var psi = new ProcessStartInfo
+        if (finalResult is not null)
         {
-            FileName = command,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+            if (finalResult.Success && finalResult.Data is null && transcript.Length > 0)
+                return finalResult with { Data = transcript.ToString() };
 
-        if (workDir is not null)
-            psi.WorkingDirectory = workDir;
-
-        // Split arguments safely (no shell interpretation)
-        foreach (var arg in SplitArguments(agent.Arguments))
-            psi.ArgumentList.Add(arg);
-
-        // ── Build stdin payload ──
-        var payload = JsonSerializer.Serialize(new
-        {
-            input = request.InputSource,
-            parameters = request.Parameters,
-            userId = user.UserId,
-            outputDestination = request.OutputDestination,
-        });
-
-        logger.LogInformation(
-            "[User: {UserId}] Starting external agent '{Agent}': {Command} (timeout {Timeout}s)",
-            user.UserId, agent.Name, command, timeout);
-
-        // ── Execute ──
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeout));
-
-        Process process;
-        try
-        {
-            process = Process.Start(psi)
-                ?? throw new InvalidOperationException("Failed to start external process.");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex,
-                "[User: {UserId}] External agent '{Agent}' failed to start",
-                user.UserId, agent.Name);
-            return ProcessingResult.Fail($"Failed to start process: {ex.Message}");
+            return finalResult;
         }
 
-        try
-        {
-            // Write input to stdin and close — ensure stdin closes even if write fails
-            try
-            {
-                await process.StandardInput.WriteAsync(payload);
-            }
-            finally
-            {
-                process.StandardInput.Close();
-            }
+        if (transcript.Length > 0)
+            return ProcessingResult.Ok($"External agent '{agent.Name}' completed.", transcript.ToString());
 
-            // Read stdout + stderr concurrently
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+        return ProcessingResult.Fail($"External agent '{agent.Name}' ended without a result event.");
+    }
 
-            await process.WaitForExitAsync(cts.Token);
+    public async IAsyncEnumerable<ProcessingStreamEvent> RunStreamingAsync(
+        AgentDefinition agent,
+        ProcessingRequest request,
+        UserContext user,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var channel = Channel.CreateUnbounded<ProcessingStreamEvent>();
 
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
+        _ = Task.Run(
+            () => ProduceStreamEventsAsync(channel.Writer, agent, request, user, ct),
+            CancellationToken.None);
 
-            logger.LogInformation(
-                "[User: {UserId}] External agent '{Agent}' exited with code {ExitCode}",
-                user.UserId, agent.Name, process.ExitCode);
-
-            if (process.ExitCode != 0)
-            {
-                var errSummary = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-                return ProcessingResult.Fail(
-                    $"External agent '{agent.Name}' failed (exit {process.ExitCode}): {Truncate(errSummary, 500)}");
-            }
-
-            // ── Parse stdout JSON ──
-            return ParseStdoutResult(stdout, agent.Name);
-        }
-        catch (OperationCanceledException)
-        {
-            KillSafe(process);
-            logger.LogWarning(
-                "[User: {UserId}] External agent '{Agent}' timed out after {Timeout}s",
-                user.UserId, agent.Name, timeout);
-            return ProcessingResult.Fail(
-                $"External agent '{agent.Name}' timed out after {timeout}s.");
-        }
-        finally
-        {
-            process.Dispose();
-        }
+        await foreach (var streamEvent in channel.Reader.ReadAllAsync(ct))
+            yield return streamEvent;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -217,30 +141,260 @@ public sealed class ExternalProcessRunner(
             yield return sb.ToString();
     }
 
-    private static ProcessingResult ParseStdoutResult(string stdout, string agentName)
+    private async Task ProduceStreamEventsAsync(
+        ChannelWriter<ProcessingStreamEvent> writer,
+        AgentDefinition agent,
+        ProcessingRequest request,
+        UserContext user,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(stdout))
-            return ProcessingResult.Ok($"Agent '{agentName}' completed (no output).", null);
+        Process? process = null;
+        CancellationTokenSource? cts = null;
 
         try
         {
-            using var doc = JsonDocument.Parse(stdout);
-            var root = doc.RootElement;
+            if (!_opts.Enabled)
+            {
+                WriteEvent(writer, ProcessingStreamEvent.ResultEvent(
+                    ProcessingResult.Fail("External agent execution is disabled by configuration.")));
+                return;
+            }
 
-            var success = root.TryGetProperty("success", out var s) && s.GetBoolean();
-            var message = root.TryGetProperty("message", out var m) ? m.GetString() : null;
-            var data = root.TryGetProperty("data", out var d) ? d.GetRawText() : null;
+            var command = agent.Command
+                ?? throw new InvalidOperationException($"External agent '{agent.Name}' has no Command configured.");
 
-            return success
-                ? ProcessingResult.Ok(message ?? $"Agent '{agentName}' completed.", data)
-                : ProcessingResult.Fail(message ?? $"Agent '{agentName}' returned failure.");
+            if (!IsCommandAllowed(command))
+            {
+                logger.LogWarning(
+                    "[User: {UserId}] Blocked external agent '{Agent}': command '{Command}' not in allowlist",
+                    user.UserId,
+                    agent.Name,
+                    command);
+                WriteEvent(writer, ProcessingStreamEvent.ResultEvent(
+                    ProcessingResult.Fail($"Command '{command}' is not permitted.")));
+                return;
+            }
+
+            var workDir = ResolveWorkingDirectory(agent.WorkingDirectory);
+            var timeout = Math.Clamp(agent.TimeoutSeconds, 1, _opts.MaxTimeoutSeconds);
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = command,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+
+            if (workDir is not null)
+                psi.WorkingDirectory = workDir;
+
+            foreach (var arg in SplitArguments(agent.Arguments))
+                psi.ArgumentList.Add(arg);
+
+            var payload = JsonSerializer.Serialize(new ExternalAgentRequestPayload(
+                ProtocolVersion: 2,
+                AgentId: agent.Id,
+                AgentName: agent.Name,
+                UserId: user.UserId,
+                Input: request.InputSource,
+                OutputDestination: request.OutputDestination,
+                Parameters: request.Parameters), JsonOptions);
+
+            logger.LogInformation(
+                "[User: {UserId}] Starting external agent '{Agent}': {Command} (timeout {Timeout}s)",
+                user.UserId,
+                agent.Name,
+                command,
+                timeout);
+
+            cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeout));
+
+            process = Process.Start(psi)
+                ?? throw new InvalidOperationException("Failed to start external process.");
+
+            try
+            {
+                await process.StandardInput.WriteAsync(payload);
+            }
+            finally
+            {
+                process.StandardInput.Close();
+            }
+
+            WriteEvent(writer, ProcessingStreamEvent.Status(
+                $"External agent '{agent.Name}' launched using streamed NDJSON protocol.",
+                agent.Name));
+
+            var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+            ProcessingResult? finalResult = null;
+
+            await foreach (var protocolEvent in ReadProtocolEventsAsync(
+                process.StandardOutput,
+                agent.Name,
+                cts.Token))
+            {
+                switch (protocolEvent.Type)
+                {
+                    case ExternalAgentProtocolEventType.Status when !string.IsNullOrWhiteSpace(protocolEvent.Message):
+                        WriteEvent(writer, ProcessingStreamEvent.Status(protocolEvent.Message, agent.Name));
+                        break;
+
+                    case ExternalAgentProtocolEventType.Chunk when !string.IsNullOrWhiteSpace(protocolEvent.Text):
+                        WriteEvent(writer, ProcessingStreamEvent.Chunk(protocolEvent.Text, agent.Name));
+                        break;
+
+                    case ExternalAgentProtocolEventType.Result:
+                        finalResult = protocolEvent.Success == false
+                            ? ProcessingResult.Fail(protocolEvent.Message ?? $"External agent '{agent.Name}' returned failure.")
+                            : ProcessingResult.Ok(
+                                protocolEvent.Message ?? $"External agent '{agent.Name}' completed.",
+                                ConvertProtocolData(protocolEvent.Data));
+                        WriteEvent(writer, ProcessingStreamEvent.ResultEvent(finalResult));
+                        break;
+                }
+            }
+
+            await process.WaitForExitAsync(cts.Token);
+            var stderr = await stderrTask;
+
+            logger.LogInformation(
+                "[User: {UserId}] External agent '{Agent}' exited with code {ExitCode}",
+                user.UserId,
+                agent.Name,
+                process.ExitCode);
+
+            if (process.ExitCode != 0)
+            {
+                var errSummary = string.IsNullOrWhiteSpace(stderr) ? "Process exited without stderr output." : stderr;
+                WriteEvent(writer, ProcessingStreamEvent.ResultEvent(
+                    ProcessingResult.Fail(
+                        $"External agent '{agent.Name}' failed (exit {process.ExitCode}): {Truncate(errSummary, 500)}")));
+                return;
+            }
+
+            if (finalResult is null)
+            {
+                WriteEvent(writer, ProcessingStreamEvent.ResultEvent(
+                    ProcessingResult.Fail(
+                        $"External agent '{agent.Name}' completed without emitting a final result event.")));
+            }
         }
-        catch (JsonException)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            // Not JSON — treat raw stdout as the result data
-            return ProcessingResult.Ok($"Agent '{agentName}' completed.", stdout);
+            if (process is not null)
+                KillSafe(process);
+
+            logger.LogWarning(
+                "[User: {UserId}] External agent '{Agent}' timed out after configured timeout",
+                user.UserId,
+                agent.Name);
+
+            WriteEvent(writer, ProcessingStreamEvent.ResultEvent(
+                ProcessingResult.Fail($"External agent '{agent.Name}' timed out.")));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            if (process is not null)
+                KillSafe(process);
+        }
+        catch (Exception ex)
+        {
+            if (process is not null)
+                KillSafe(process);
+
+            logger.LogError(ex,
+                "[User: {UserId}] External agent '{Agent}' failed while processing streamed protocol output",
+                user.UserId,
+                agent.Name);
+
+            WriteEvent(writer, ProcessingStreamEvent.ResultEvent(
+                ProcessingResult.Fail($"External agent '{agent.Name}' failed: {ex.Message}")));
+        }
+        finally
+        {
+            cts?.Dispose();
+            process?.Dispose();
+            writer.TryComplete();
         }
     }
+
+    private static void WriteEvent(ChannelWriter<ProcessingStreamEvent> writer, ProcessingStreamEvent streamEvent)
+    {
+        _ = writer.TryWrite(streamEvent);
+    }
+
+    private static async IAsyncEnumerable<ExternalAgentProtocolEvent> ReadProtocolEventsAsync(
+        StreamReader stdout,
+        string agentName,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        while (true)
+        {
+            var line = await stdout.ReadLineAsync().WaitAsync(ct);
+            if (line is null)
+                yield break;
+
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            yield return ParseProtocolLine(line, agentName);
+        }
+    }
+
+    private static ExternalAgentProtocolEvent ParseProtocolLine(string line, string agentName)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("type", out var typeEl))
+                throw new JsonException("Missing 'type' property.");
+
+            var type = ParseProtocolEventType(typeEl.GetString());
+            var message = root.TryGetProperty("message", out var messageEl)
+                ? messageEl.GetString()
+                : null;
+            var text = root.TryGetProperty("text", out var textEl)
+                ? textEl.GetString()
+                : null;
+            var success = root.TryGetProperty("success", out var successEl)
+                ? successEl.GetBoolean()
+                : (bool?)null;
+            var data = root.TryGetProperty("data", out var dataEl)
+                ? dataEl.Clone()
+                : (JsonElement?)null;
+
+            return new ExternalAgentProtocolEvent(type, message, text, success, data);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"External agent '{agentName}' emitted invalid protocol output: {ex.Message}",
+                ex);
+        }
+    }
+
+    private static ExternalAgentProtocolEventType ParseProtocolEventType(string? rawType) => rawType?.Trim().ToLowerInvariant() switch
+    {
+        "status" => ExternalAgentProtocolEventType.Status,
+        "chunk" => ExternalAgentProtocolEventType.Chunk,
+        "result" => ExternalAgentProtocolEventType.Result,
+        _ => throw new InvalidOperationException($"Unknown external agent event type '{rawType}'."),
+    };
+
+    private static object? ConvertProtocolData(JsonElement? data) => data?.ValueKind switch
+    {
+        null => null,
+        JsonValueKind.Null => null,
+        JsonValueKind.Undefined => null,
+        JsonValueKind.String => data.Value.GetString(),
+        _ => data.Value.Clone(),
+    };
 
     private static void KillSafe(Process process)
     {
@@ -250,3 +404,26 @@ public sealed class ExternalProcessRunner(
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "…");
 }
+
+internal sealed record ExternalAgentRequestPayload(
+    int ProtocolVersion,
+    int AgentId,
+    string AgentName,
+    string UserId,
+    string Input,
+    string OutputDestination,
+    IReadOnlyDictionary<string, string>? Parameters);
+
+internal enum ExternalAgentProtocolEventType
+{
+    Status,
+    Chunk,
+    Result,
+}
+
+internal sealed record ExternalAgentProtocolEvent(
+    ExternalAgentProtocolEventType Type,
+    string? Message = null,
+    string? Text = null,
+    bool? Success = null,
+    JsonElement? Data = null);

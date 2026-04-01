@@ -53,7 +53,7 @@ Agents are the executable units in the system.
 
 Each agent can be:
 - `Llm` — prompt-driven, executed through GitHub Models
-- `External` — executed through a local command using stdin/stdout JSON
+- `External` — executed through a local command using a streamed NDJSON protocol
 
 An agent includes:
 - name, icon, description
@@ -267,29 +267,33 @@ Typical resource actions:
 
 ## External Agent Protocol
 
-External agents communicate using JSON over stdin/stdout.
+External agents receive one JSON request on `stdin` and emit UTF-8 NDJSON events on `stdout`.
 
 Input shape:
 ```json
 {
+  "protocolVersion": 2,
+  "agentId": 123,
+  "agentName": "Data Analyst",
+  "userId": "...",
   "input": "...",
-  "parameters": {},
-  "userId": "..."
+  "outputDestination": "...",
+  "parameters": {}
 }
 ```
 
-Expected stdout shape:
+Supported stdout events:
 ```json
-{
-  "success": true,
-  "message": "...",
-  "data": {}
-}
+{"type":"status","message":"Downloading source data"}
+{"type":"chunk","text":"Processed row 1 of 42"}
+{"type":"result","success":true,"message":"Completed","data":{}}
 ```
 
 Rules:
 - exit code `0` means success
 - non-zero exit code means failure
+- the process must emit exactly one final `result` event
+- `status` and `chunk` events are optional and may be emitted any number of times before the final result
 - the command must be allowed by `ExternalAgents:AllowedCommands`
 
 ## Development Notes
