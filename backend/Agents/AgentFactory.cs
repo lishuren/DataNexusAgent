@@ -33,7 +33,7 @@ public sealed record CreateRuntimeAgentResult(
     string BuiltInstructions,
     IReadOnlyList<SkillDefinition> ResolvedSkills,
     AgentExecutionTrace Trace,
-    ExternalAgentExecutionTrace? ExternalTrace);
+    ExternalAgentExecutionTrace? ExternalTrace = null);
 
 /// <summary>
 /// Creates Microsoft Agent Framework <see cref="ChatClientAgent"/> instances from
@@ -104,18 +104,33 @@ public sealed class AgentFactory(
     }
 
     /// <summary>
+    /// Creates an AF agent for any <see cref="AgentDefinition"/>, routing LLM agents
+    /// to <see cref="ChatClientAgent"/> and external agents to <see cref="ExternalAgentAdapter"/>.
+    /// Used by pipeline execution where agent types are mixed.
+    /// </summary>
+    public async Task<AIAgent> CreateAnyAgentAsync(
+        AgentDefinition agentDef,
+        UserContext user,
+        string outputDestination,
+        IReadOnlyDictionary<string, string>? parameters,
+        CancellationToken ct = default)
+    {
+        if (agentDef.ExecutionType == AgentExecutionType.External)
+            return CreateExternalAgent(agentDef, user, outputDestination, parameters);
+
+        return (await CreateAgentAsync(agentDef, user, ct)).Agent;
+    }
+
+    /// <summary>
     /// Wraps an external (CLI/script) agent as an AF <see cref="AIAgent"/>
     /// via <see cref="ExternalAgentAdapter"/>.
     /// </summary>
-    public AIAgent CreateExternalAgent(AgentDefinition agentDef, UserContext user)
-        => CreateExternalAgent(agentDef, user, "stdout", null, null);
-
     public AIAgent CreateExternalAgent(
         AgentDefinition agentDef,
         UserContext user,
         string outputDestination,
         IReadOnlyDictionary<string, string>? parameters,
-        ExternalAgentExecutionTrace? trace)
+        ExternalAgentExecutionTrace? trace = null)
     {
         var logger = loggerFactory.CreateLogger($"Agent.{agentDef.Name}");
         return ExternalAgentAdapter.Create(chatClient, externalRunner, agentDef, user, logger, outputDestination, parameters, trace);
@@ -135,14 +150,16 @@ public sealed class AgentFactory(
         IReadOnlyDictionary<string, string>? parameters,
         CancellationToken ct = default)
     {
-        return (await CreateRuntimeAgentAsync(
+        var baseAgent = await CreateAnyAgentAsync(agentDef, user, outputDestination, parameters, ct);
+
+        return AttachPluginMiddleware(
+            baseAgent,
             agentDef,
-            user,
+            user.UserId,
             inputPlugin,
             outputPlugin,
-            outputDestination,
             parameters,
-            ct: ct)).Agent;
+            trace: null);
     }
 
     /// <summary>
@@ -160,33 +177,35 @@ public sealed class AgentFactory(
         string? promptOverride = null,
         CancellationToken ct = default)
     {
-        var effectiveDef = promptOverride is not null
-            ? agentDef with { SystemPrompt = promptOverride }
-            : agentDef;
-        var trace = new AgentExecutionTrace();
-        var executionMetadata = BuildExecutionMetadata(outputDestination, parameters);
-
-        if (effectiveDef.ExecutionType == AgentExecutionType.External)
+        if (agentDef.ExecutionType == AgentExecutionType.External)
         {
             var externalTrace = new ExternalAgentExecutionTrace();
-            var externalRuntimeAgent = AttachPluginMiddleware(
-                CreateExternalAgent(effectiveDef, user, outputDestination, executionMetadata, externalTrace),
-                effectiveDef,
+            var externalAgent = CreateExternalAgent(agentDef, user, outputDestination, parameters, externalTrace);
+            var extTrace = new AgentExecutionTrace();
+
+            var runtimeExtAgent = AttachPluginMiddleware(
+                externalAgent,
+                agentDef,
                 user.UserId,
                 inputPlugin,
                 outputPlugin,
-                executionMetadata,
-                trace);
+                parameters,
+                extTrace);
 
             return new CreateRuntimeAgentResult(
-                externalRuntimeAgent,
-                string.Empty,
+                runtimeExtAgent,
+                agentDef.SystemPrompt,
                 [],
-                trace,
+                extTrace,
                 externalTrace);
         }
 
+        var effectiveDef = promptOverride is not null
+            ? agentDef with { SystemPrompt = promptOverride }
+            : agentDef;
+
         var baseResult = await CreateAgentAsync(effectiveDef, user, ct);
+        var trace = new AgentExecutionTrace();
 
         var runtimeAgent = AttachPluginMiddleware(
             baseResult.Agent,
@@ -194,15 +213,14 @@ public sealed class AgentFactory(
             user.UserId,
             inputPlugin,
             outputPlugin,
-            executionMetadata,
+            parameters,
             trace);
 
         return new CreateRuntimeAgentResult(
             runtimeAgent,
             baseResult.BuiltInstructions,
             baseResult.ResolvedSkills,
-            trace,
-            null);
+            trace);
     }
 
     private static AIAgent AttachPluginMiddleware(
@@ -291,7 +309,8 @@ public sealed class AgentFactory(
 
         var lastUser = msgList.LastOrDefault(m => m.Role == ChatRole.User);
         var inputText = lastUser?.Text ?? string.Empty;
-        var ctx = new PluginContext(userId, inputText, Metadata: parameters);
+        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var ctx = new PluginContext(userId, inputText, Metadata: paramDict);
         var result = await inputPlugin.ExecuteAsync(ctx, cancellationToken);
 
         if (!result.Success)
@@ -333,11 +352,12 @@ public sealed class AgentFactory(
         if (trace is not null)
             trace.OutputPluginRan = true;
 
+        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
         var outCtx = new PluginContext(
             userId,
             responseText,
-            parameters?.GetValueOrDefault("Schema"),
-            parameters);
+            paramDict?.GetValueOrDefault("Schema"),
+            paramDict);
         var outResult = await outputPlugin.ExecuteAsync(outCtx, cancellationToken);
 
         if (trace is not null)
@@ -445,27 +465,6 @@ public sealed class AgentFactory(
             parameters,
             promptOverride,
             ct)).Agent;
-    }
-
-    private static IReadOnlyDictionary<string, string>? BuildExecutionMetadata(
-        string outputDestination,
-        IReadOnlyDictionary<string, string>? parameters)
-    {
-        Dictionary<string, string>? metadata = parameters is { Count: > 0 }
-            ? new Dictionary<string, string>(parameters, StringComparer.OrdinalIgnoreCase)
-            : null;
-
-        if (metadata is not null && metadata.TryGetValue("endpoint", out var endpoint) && !string.IsNullOrWhiteSpace(endpoint))
-            metadata["ApiEndpoint"] = endpoint;
-
-        if (!string.IsNullOrWhiteSpace(outputDestination))
-        {
-            metadata ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            metadata["Destination"] = outputDestination;
-            metadata["OutputDestination"] = outputDestination;
-        }
-
-        return metadata is { Count: > 0 } ? metadata : null;
     }
 
     private IList<AIContextProvider>? BuildSkillContextProviders(IReadOnlyList<SkillDefinition> skills)
