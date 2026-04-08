@@ -35,6 +35,13 @@ FRONTEND_PID=$!
 
 echo "Frontend started (PID $FRONTEND_PID). Logs: $LOG_DIR/frontend.log"
 
+echo ""
+echo "══════════════════════════════════════════"
+echo "  Frontend:  http://localhost:5173"
+echo "  Backend:   http://localhost:5000"
+echo "  API:       http://localhost:5173/api/*  (proxied)"
+echo "══════════════════════════════════════════"
+echo ""
 echo "Press Ctrl+C to stop both processes."
 
 cleanup() {
