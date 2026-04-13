@@ -20,16 +20,39 @@ kill_port() {
 kill_port 5000
 kill_port 5173
 
+ensure_backend_dependencies() {
+  local restore_stamp="obj/project.assets.json"
+
+  if [[ ! -f "$restore_stamp" || DataNexus.csproj -nt "$restore_stamp" || ../DataNexus.sln -nt "$restore_stamp" ]]; then
+    echo "Restoring backend dependencies..."
+    dotnet restore
+  fi
+}
+
+ensure_frontend_dependencies() {
+  local install_stamp="node_modules/.package-lock.json"
+
+  if [[ ! -d "node_modules" ]]; then
+    echo "Installing frontend dependencies..."
+    npm install
+    return
+  fi
+
+  if [[ ! -f "$install_stamp" || package.json -nt "$install_stamp" || package-lock.json -nt "$install_stamp" ]]; then
+    echo "Refreshing frontend dependencies..."
+    npm install
+  fi
+}
+
 cd "$ROOT_DIR/backend"
+ensure_backend_dependencies
 ASPNETCORE_ENVIRONMENT=Development dotnet run >"$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 
 echo "Backend started (PID $BACKEND_PID). Logs: $LOG_DIR/backend.log"
 
 cd "$ROOT_DIR/frontend"
-if [[ ! -d "node_modules" ]]; then
-  npm install
-fi
+ensure_frontend_dependencies
 npm run dev >"$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 
