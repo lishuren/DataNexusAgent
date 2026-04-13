@@ -53,8 +53,9 @@ VITE_ONEDRIVE_CLIENT_ID=your-azure-app-client-id-here
 
 Restart the Vite dev server after saving.
 
-> **Note:** If this variable is not set, the OneDrive picker button renders as disabled with a
-> "OneDrive not configured" message — there is no crash or error.
+> **Note:** If this variable is not set, browsing OneDrive files is disabled, but the sharing-link
+> paste box still works for public or "Anyone with the link" URLs. Authenticated/shared corporate
+> links still require `VITE_ONEDRIVE_CLIENT_ID` so the app can sign in to Microsoft Graph.
 
 ---
 
@@ -246,7 +247,7 @@ See `frontend/.env.example` for setup instructions.
 
 | Problem | Fix |
 |---------|-----|
-| "OneDrive not configured" message | Set `VITE_ONEDRIVE_CLIENT_ID` in `frontend/.env` and restart Vite |
+| "OneDrive browsing not configured" message | Set `VITE_ONEDRIVE_CLIENT_ID` in `frontend/.env` and restart Vite if you want the browse flow. Pasted public sharing links can still work without it |
 | Popup blocked | Allow popups for `localhost:5173` in your browser |
 | "Authentication cancelled" | User closed the popup before completing sign-in |
 | "Authentication timed out" | Sign-in wasn't completed within 2 minutes — try again |
