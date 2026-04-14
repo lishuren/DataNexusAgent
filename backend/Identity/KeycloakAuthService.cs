@@ -17,9 +17,24 @@ public sealed class KeycloakAuthService(
             return new UserContext { IsAuthenticated = false };
         }
 
-        var userId = principal.FindFirstValue(_userIdClaim) ?? string.Empty;
-        var email = principal.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
-        var displayName = principal.FindFirstValue("preferred_username") ?? string.Empty;
+        var userId = FindUserId(principal);
+        var email = FindClaimValue(principal, ClaimTypes.Email, "email") ?? string.Empty;
+        var displayName = FindClaimValue(principal, "preferred_username", "name") ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            logger.LogWarning(
+                "Authenticated principal missing usable user id claim. Configured claim: {Claim}. Claims: {Claims}",
+                _userIdClaim,
+                string.Join(", ", principal.Claims.Select(c => c.Type)));
+
+            return new UserContext
+            {
+                IsAuthenticated = false,
+                Email = email,
+                DisplayName = displayName,
+            };
+        }
 
         var roles = ExtractRealmRoles(principal);
 
@@ -35,6 +50,41 @@ public sealed class KeycloakAuthService(
             Roles = roles,
             IsAuthenticated = true
         };
+    }
+
+    private string FindUserId(ClaimsPrincipal principal)
+    {
+        // Prefer configured claim, then common JWT/.NET mapped identifiers.
+        return FindClaimValue(
+                principal,
+                _userIdClaim,
+                "sub",
+                ClaimTypes.NameIdentifier,
+                "oid",
+                "preferred_username")
+            ?? string.Empty;
+    }
+
+    private static string? FindClaimValue(ClaimsPrincipal principal, params string[] claimTypes)
+    {
+        foreach (var claimType in claimTypes)
+        {
+            if (string.IsNullOrWhiteSpace(claimType))
+                continue;
+
+            var value = principal.FindFirstValue(claimType);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+
+            // Some providers emit equivalent claim types with different casing.
+            value = principal.Claims
+                .FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return null;
     }
 
     /// <summary>

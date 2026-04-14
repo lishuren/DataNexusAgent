@@ -30,6 +30,8 @@ public sealed class SkillRegistry(
         if (seedPath is not null && Directory.Exists(seedPath))
             await MigrateLegacyPublicMarkdownSkillsAsync(seedPath, ct);
 
+        WarnOrphanedPrivateSkills();
+
         var publicCount = (await GetPublicSkillsAsync(ct)).Count;
         logger.LogInformation(
             "SkillRegistry initialized — {Count} public skills in file-backed storage at {Root}",
@@ -43,6 +45,8 @@ public sealed class SkillRegistry(
     public async Task<IReadOnlyList<SkillDefinition>> GetSkillsForUserAsync(
         string userId, CancellationToken ct = default, params string[] skillNames)
     {
+        await RecoverLegacyRootSkillsForUserAsync(userId, ct);
+
         var visibleSkills = await LoadVisibleSkillsAsync(userId, ct);
         if (skillNames.Length == 0)
             return visibleSkills;
@@ -77,6 +81,8 @@ public sealed class SkillRegistry(
     public async Task<SkillDefinition> CreateUserSkillAsync(
         string userId, string name, string instructions, CancellationToken ct = default)
     {
+        await RecoverLegacyRootSkillsForUserAsync(userId, ct);
+
         var slug = NormalizeSkillName(name);
         await EnsurePrivateSkillNameAvailableAsync(userId, slug, excludeDirectory: null, ct);
 
@@ -188,6 +194,46 @@ public sealed class SkillRegistry(
             publicSkillsTask.Result
                 .Concat(privateSkillsTask.Result)
                 .OrderBy(skill => skill.Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private Task RecoverLegacyRootSkillsForUserAsync(string userId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || !Directory.Exists(_privateRoot))
+            return Task.CompletedTask;
+
+        var userRoot = GetPrivateUserRoot(userId);
+        Directory.CreateDirectory(userRoot);
+
+        foreach (var directory in Directory.EnumerateDirectories(_privateRoot))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Legacy orphan shape from blank userId bug:
+            // .github/skills/user/{skillName}/SKILL.md
+            var manifestPath = Path.Combine(directory, SkillManifestFileName);
+            if (!File.Exists(manifestPath))
+                continue;
+
+            var skillDirectoryName = Path.GetFileName(directory);
+            var targetDirectory = Path.Combine(userRoot, skillDirectoryName);
+
+            if (Directory.Exists(targetDirectory))
+            {
+                logger.LogWarning(
+                    "Skipping legacy skill recovery for {SkillName} because target {Target} already exists",
+                    skillDirectoryName,
+                    targetDirectory);
+                continue;
+            }
+
+            Directory.Move(directory, targetDirectory);
+            logger.LogInformation(
+                "Recovered legacy orphaned skill '{SkillName}' into {Target}",
+                skillDirectoryName,
+                targetDirectory);
+        }
+
+        return Task.CompletedTask;
     }
 
     private async Task<IReadOnlyList<SkillDefinition>> LoadPublicSkillsAsync(CancellationToken ct)
@@ -321,6 +367,34 @@ public sealed class SkillRegistry(
 
         foreach (var manifestPath in Directory.EnumerateFiles(rootDirectory, SkillManifestFileName, SearchOption.AllDirectories))
             yield return Path.GetDirectoryName(manifestPath)!;
+    }
+
+    /// <summary>
+    /// Logs a warning for any SKILL.md packages sitting directly inside <c>user/</c> without
+    /// a userId subdirectory. These skills are invisible to ownership checks and should be
+    /// recreated through the Skills page or moved to <c>user/{userId}/{skillName}/</c>.
+    /// </summary>
+    private void WarnOrphanedPrivateSkills()
+    {
+        if (!Directory.Exists(_privateRoot))
+            return;
+
+        foreach (var manifestPath in Directory.EnumerateFiles(_privateRoot, SkillManifestFileName, SearchOption.AllDirectories))
+        {
+            var packageDirectory = Path.GetDirectoryName(manifestPath)!;
+            var relativePath = Path.GetRelativePath(_privateRoot, packageDirectory).Replace('\\', '/');
+            var parts = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+            // Valid structure: {userId}/{skillName} → 2+ parts. Skills at root level (1 part) are orphaned.
+            if (parts.Length < 2)
+            {
+                var skillName = parts.Length > 0 ? parts[0] : "unknown";
+                logger.LogWarning(
+                    "Orphaned skill package at {Path} ({SkillName}) — missing userId subdirectory. " +
+                    "Recreate this skill through the Skills page or move it to user/{{yourUserId}}/{{skillName}}/",
+                    manifestPath, skillName);
+            }
+        }
     }
 
     private (SkillScope Scope, string? OwnerId, string? PublishedByUserId) ResolveOwnership(string packageDirectory)

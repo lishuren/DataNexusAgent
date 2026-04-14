@@ -5,6 +5,7 @@ import ProcessPage from "@/pages/ProcessPage";
 import AgentsPage from "@/pages/AgentsPage";
 import OrchestrationsPage from "@/pages/OrchestrationsPage";
 import SkillsPage from "@/pages/SkillsPage";
+import PluginsPage from "@/pages/PluginsPage";
 import MarketplacePage from "@/pages/MarketplacePage";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="agents" element={<AgentsPage />} />
           <Route path="orchestrations" element={<OrchestrationsPage />} />
           <Route path="skills" element={<SkillsPage />} />
+          <Route path="plugins" element={<PluginsPage />} />
           <Route path="marketplace" element={<MarketplacePage />} />
         </Route>
       </Routes>

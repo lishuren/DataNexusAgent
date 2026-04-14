@@ -151,6 +151,7 @@ public sealed class AgentFactory(
         CancellationToken ct = default)
     {
         var baseAgent = await CreateAnyAgentAsync(agentDef, user, outputDestination, parameters, ct);
+        var pluginMetadata = BuildPluginMetadata(parameters, outputDestination);
 
         return AttachPluginMiddleware(
             baseAgent,
@@ -158,7 +159,7 @@ public sealed class AgentFactory(
             user.UserId,
             inputPlugin,
             outputPlugin,
-            parameters,
+            pluginMetadata,
             trace: null);
     }
 
@@ -182,6 +183,7 @@ public sealed class AgentFactory(
             var externalTrace = new ExternalAgentExecutionTrace();
             var externalAgent = CreateExternalAgent(agentDef, user, outputDestination, parameters, externalTrace);
             var extTrace = new AgentExecutionTrace();
+            var externalPluginMetadata = BuildPluginMetadata(parameters, outputDestination);
 
             var runtimeExtAgent = AttachPluginMiddleware(
                 externalAgent,
@@ -189,7 +191,7 @@ public sealed class AgentFactory(
                 user.UserId,
                 inputPlugin,
                 outputPlugin,
-                parameters,
+                externalPluginMetadata,
                 extTrace);
 
             return new CreateRuntimeAgentResult(
@@ -206,6 +208,7 @@ public sealed class AgentFactory(
 
         var baseResult = await CreateAgentAsync(effectiveDef, user, ct);
         var trace = new AgentExecutionTrace();
+        var pluginMetadata = BuildPluginMetadata(parameters, outputDestination);
 
         var runtimeAgent = AttachPluginMiddleware(
             baseResult.Agent,
@@ -213,7 +216,7 @@ public sealed class AgentFactory(
             user.UserId,
             inputPlugin,
             outputPlugin,
-            parameters,
+            pluginMetadata,
             trace);
 
         return new CreateRuntimeAgentResult(
@@ -229,7 +232,7 @@ public sealed class AgentFactory(
         string userId,
         InputProcessorPlugin inputPlugin,
         OutputIntegratorPlugin outputPlugin,
-        IReadOnlyDictionary<string, string>? parameters,
+        IReadOnlyDictionary<string, string>? pluginMetadata,
         AgentExecutionTrace? trace)
     {
         var hasInput = agentDef.PluginNames.Contains(PluginNames.InputProcessor);
@@ -247,7 +250,7 @@ public sealed class AgentFactory(
                         hasInput,
                         inputPlugin,
                         userId,
-                        parameters,
+                        pluginMetadata,
                         trace,
                         cancellationToken);
 
@@ -264,7 +267,7 @@ public sealed class AgentFactory(
                         hasOutput,
                         outputPlugin,
                         userId,
-                        parameters,
+                        pluginMetadata,
                         trace,
                         cancellationToken);
 
@@ -284,7 +287,7 @@ public sealed class AgentFactory(
                         inputPlugin,
                         outputPlugin,
                         userId,
-                        parameters,
+                        pluginMetadata,
                         trace,
                         cancellationToken))
             .Build();
@@ -295,7 +298,7 @@ public sealed class AgentFactory(
         bool hasInput,
         InputProcessorPlugin inputPlugin,
         string userId,
-        IReadOnlyDictionary<string, string>? parameters,
+        IReadOnlyDictionary<string, string>? pluginMetadata,
         AgentExecutionTrace? trace,
         CancellationToken cancellationToken)
     {
@@ -309,8 +312,10 @@ public sealed class AgentFactory(
 
         var lastUser = msgList.LastOrDefault(m => m.Role == ChatRole.User);
         var inputText = lastUser?.Text ?? string.Empty;
-        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
-        var ctx = new PluginContext(userId, inputText, Metadata: paramDict);
+        var metadata = pluginMetadata is null
+            ? null
+            : new Dictionary<string, string>(pluginMetadata, StringComparer.OrdinalIgnoreCase);
+        var ctx = new PluginContext(userId, inputText, Metadata: metadata);
         var result = await inputPlugin.ExecuteAsync(ctx, cancellationToken);
 
         if (!result.Success)
@@ -342,7 +347,7 @@ public sealed class AgentFactory(
         bool hasOutput,
         OutputIntegratorPlugin outputPlugin,
         string userId,
-        IReadOnlyDictionary<string, string>? parameters,
+        IReadOnlyDictionary<string, string>? pluginMetadata,
         AgentExecutionTrace? trace,
         CancellationToken cancellationToken)
     {
@@ -352,12 +357,14 @@ public sealed class AgentFactory(
         if (trace is not null)
             trace.OutputPluginRan = true;
 
-        var paramDict = parameters?.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var metadata = pluginMetadata is null
+            ? null
+            : new Dictionary<string, string>(pluginMetadata, StringComparer.OrdinalIgnoreCase);
         var outCtx = new PluginContext(
             userId,
             responseText,
-            paramDict?.GetValueOrDefault("Schema"),
-            paramDict);
+            metadata?.GetValueOrDefault("Schema"),
+            metadata);
         var outResult = await outputPlugin.ExecuteAsync(outCtx, cancellationToken);
 
         if (trace is not null)
@@ -386,7 +393,7 @@ public sealed class AgentFactory(
         InputProcessorPlugin inputPlugin,
         OutputIntegratorPlugin outputPlugin,
         string userId,
-        IReadOnlyDictionary<string, string>? parameters,
+        IReadOnlyDictionary<string, string>? pluginMetadata,
         AgentExecutionTrace? trace,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -395,7 +402,7 @@ public sealed class AgentFactory(
             hasInput,
             inputPlugin,
             userId,
-            parameters,
+            pluginMetadata,
             trace,
             cancellationToken);
 
@@ -425,7 +432,7 @@ public sealed class AgentFactory(
             hasOutput,
             outputPlugin,
             userId,
-            parameters,
+            pluginMetadata,
             trace,
             cancellationToken);
 
@@ -438,6 +445,29 @@ public sealed class AgentFactory(
 
     private static AgentResponse CreatePluginErrorResponse(string text) =>
         new([new ChatMessage(ChatRole.Assistant, text)]);
+
+    private static IReadOnlyDictionary<string, string>? BuildPluginMetadata(
+        IReadOnlyDictionary<string, string>? parameters,
+        string outputDestination)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (parameters is not null)
+        {
+            foreach (var (key, value) in parameters)
+            {
+                if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+                    continue;
+
+                metadata[key] = value;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(outputDestination))
+            metadata["OutputDestination"] = outputDestination;
+
+        return metadata.Count == 0 ? null : metadata;
+    }
 
     /// <summary>
     /// Creates an AF pipeline-ready agent for an orchestration step.

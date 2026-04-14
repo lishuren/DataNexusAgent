@@ -15,10 +15,13 @@ public sealed class OutputIntegratorPlugin(
 
         try
         {
+            var destinationSchema = context.DestinationSchema
+                ?? GetMetadataValue(context.Metadata, "Schema", "schema");
+
             // Step 1: Validate against destination schema if provided
-            if (context.DestinationSchema is not null)
+            if (destinationSchema is not null)
             {
-                var validation = ValidateAgainstSchema(context.InputData, context.DestinationSchema);
+                var validation = ValidateAgainstSchema(context.InputData, destinationSchema);
                 if (!validation.IsValid)
                 {
                     logger.LogWarning(
@@ -31,12 +34,13 @@ public sealed class OutputIntegratorPlugin(
             }
 
             // Step 2: Route to the appropriate output destination
-            var destination = context.Metadata?.GetValueOrDefault("Destination", "api") ?? "api";
+            var destination = ResolveDestination(context.Metadata);
 
             return destination switch
             {
                 "api" => await ExecuteApiCallAsync(context, ct),
                 "database" => await ExecuteDatabaseWriteAsync(context, ct),
+                "passthrough" => new PluginResult(true, context.InputData),
                 _ => throw new NotSupportedException($"Unsupported destination: {destination}")
             };
         }
@@ -95,7 +99,7 @@ public sealed class OutputIntegratorPlugin(
 
     private async Task<PluginResult> ExecuteApiCallAsync(PluginContext context, CancellationToken ct)
     {
-        var endpoint = context.Metadata?.GetValueOrDefault("ApiEndpoint")
+        var endpoint = ResolveApiEndpoint(context.Metadata)
             ?? throw new InvalidOperationException("ApiEndpoint not specified in metadata");
 
         // SSRF protection: only allow HTTPS endpoints
@@ -124,6 +128,85 @@ public sealed class OutputIntegratorPlugin(
         throw new NotImplementedException(
             "Database write destination is not yet implemented. Use 'api' destination instead.");
     }
+
+    private static string ResolveDestination(IReadOnlyDictionary<string, string>? metadata)
+    {
+        var explicitDestination = GetMetadataValue(metadata, "Destination");
+        if (!string.IsNullOrWhiteSpace(explicitDestination))
+            return explicitDestination.Trim().ToLowerInvariant();
+
+        if (ResolveApiEndpoint(metadata) is not null)
+            return "api";
+
+        var outputDestination = GetMetadataValue(metadata, "OutputDestination");
+        if (string.Equals(outputDestination, "database", StringComparison.OrdinalIgnoreCase))
+            return "database";
+
+        return IsPassthroughOutput(outputDestination)
+            ? "passthrough"
+            : "api";
+    }
+
+    private static string? ResolveApiEndpoint(IReadOnlyDictionary<string, string>? metadata)
+    {
+        var endpoint = GetMetadataValue(metadata, "ApiEndpoint", "Endpoint", "endpoint");
+        if (!string.IsNullOrWhiteSpace(endpoint))
+            return endpoint;
+
+        var outputDestination = GetMetadataValue(metadata, "OutputDestination");
+        return IsHttpsUrl(outputDestination) ? outputDestination : null;
+    }
+
+    private static string? GetMetadataValue(
+        IReadOnlyDictionary<string, string>? metadata,
+        params string[] keys)
+    {
+        if (metadata is null)
+            return null;
+
+        foreach (var key in keys)
+        {
+            if (metadata.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        foreach (var (key, value) in metadata)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+
+            foreach (var candidate in keys)
+            {
+                if (string.Equals(key, candidate, StringComparison.OrdinalIgnoreCase))
+                    return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsPassthroughOutput(string? outputDestination)
+    {
+        if (string.IsNullOrWhiteSpace(outputDestination))
+            return false;
+
+        return outputDestination.Trim().ToLowerInvariant() switch
+        {
+            "json" => true,
+            "csv" => true,
+            "sql" => true,
+            "markdown" => true,
+            "html" => true,
+            "text" => true,
+            "plain text" => true,
+            "plaintext" => true,
+            _ => false,
+        };
+    }
+
+    private static bool IsHttpsUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps;
 
     private sealed record SchemaValidationResult(bool IsValid, string? ErrorMessage);
 }

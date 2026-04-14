@@ -41,6 +41,42 @@ async function getMsalInstance(): Promise<IPublicClientApplication> {
   return pca;
 }
 
+function getMsalErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+
+  const candidate = error as { errorCode?: unknown; subError?: unknown; code?: unknown };
+  const code = candidate.errorCode ?? candidate.subError ?? candidate.code;
+  return typeof code === "string" ? code.toLowerCase() : undefined;
+}
+
+function isInteractiveAuthRequired(error: unknown): boolean {
+  if (error instanceof InteractionRequiredAuthError) return true;
+
+  const errorCode = getMsalErrorCode(error);
+  if (!errorCode) return false;
+
+  return [
+    "interaction_required",
+    "login_required",
+    "consent_required",
+    "no_tokens_found",
+    "token_refresh_required",
+    "timed_out",
+    "monitor_window_timeout",
+  ].includes(errorCode);
+}
+
+function toUserFacingAuthError(error: unknown): Error {
+  const errorCode = getMsalErrorCode(error);
+  if (errorCode === "timed_out" || errorCode === "monitor_window_timeout") {
+    return new Error(
+      "Microsoft sign-in timed out. Close any stuck Microsoft login windows and try Load again.",
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 /**
  * Open the dedicated auth window and wait for the token via BroadcastChannel.
  * The auth window uses loginRedirect (not popup), so it survives multi-hop
@@ -69,7 +105,7 @@ function acquireTokenViaRedirect(): Promise<string> {
 
     const timer = setTimeout(() => {
       channel.close();
-      reject(new Error("Authentication timed out — please try again"));
+      reject(new Error("Microsoft sign-in timed out. Close any stuck Microsoft login windows and try again."));
     }, 600000); // 10 minutes
 
     // NOTE: we intentionally do NOT poll authWindow.closed here.
@@ -112,12 +148,16 @@ async function acquireToken(): Promise<string> {
       return result.accessToken;
     } catch (e) {
       console.warn("[OneDrive] Silent token failed:", e);
-      if (!(e instanceof InteractionRequiredAuthError)) throw e;
+      if (!isInteractiveAuthRequired(e)) throw toUserFacingAuthError(e);
     }
   }
 
   // No cached account or silent failed — open redirect window
-  return acquireTokenViaRedirect();
+  try {
+    return await acquireTokenViaRedirect();
+  } catch (e) {
+    throw toUserFacingAuthError(e);
+  }
 }
 
 /**

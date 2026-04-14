@@ -17,16 +17,27 @@ public sealed class KeycloakMiddleware(
             userContext.Email = extracted.Email;
             userContext.DisplayName = extracted.DisplayName;
             userContext.Roles = extracted.Roles;
-            userContext.IsAuthenticated = true;
+            userContext.IsAuthenticated = extracted.IsAuthenticated;
 
             // Tag distributed traces with the authenticated user
-            Activity.Current?.SetTag("user.id", extracted.UserId);
+            if (extracted.IsAuthenticated)
+                Activity.Current?.SetTag("user.id", extracted.UserId);
 
-            logger.LogInformation(
-                "[User: {UserId}] {Method} {Path} — agent relay initiated",
-                extracted.UserId,
-                context.Request.Method,
-                context.Request.Path);
+            if (extracted.IsAuthenticated)
+            {
+                logger.LogInformation(
+                    "[User: {UserId}] {Method} {Path} — agent relay initiated",
+                    extracted.UserId,
+                    context.Request.Method,
+                    context.Request.Path);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Authenticated principal without usable user id for {Method} {Path}",
+                    context.Request.Method,
+                    context.Request.Path);
+            }
         }
 
         await next(context);

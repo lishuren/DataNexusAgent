@@ -243,31 +243,40 @@ export default function SkillsPage() {
           </p>
         ) : (
           <ul className="skill-list">
-            {skills.map((s) => (
+            {skills.map((s) => {
+              const isOwner = s.ownerId != null && s.ownerId === userId;
+              const isPublisher = s.publishedByUserId != null && s.publishedByUserId === userId;
+              const isOrphaned = s.scope === "Public" && s.ownerId == null && s.publishedByUserId == null;
+              return (
               <li key={s.id}>
                 <span>
                   {s.name}{" "}
                   <span className={`badge ${s.scope === "Public" ? "badge-public" : "badge-private"}`}>
                     {s.scope}
                   </span>
+                  {isOrphaned && (
+                    <span className="badge" style={{ background: "var(--warning, #f59e0b)", color: "#fff", marginLeft: "0.25rem" }} title="This skill has no recognized owner. Clone it to take ownership.">
+                      ⚠ No owner
+                    </span>
+                  )}
                 </span>
                 <span style={{ display: "flex", gap: "0.5rem" }}>
-                  {s.scope === "Private" && s.ownerId === userId && (
+                  {s.scope === "Private" && isOwner && (
                     <button className="btn btn-sm btn-primary" onClick={() => handlePublish(s.id, s.name)}>
                       Publish
                     </button>
                   )}
-                  {s.scope === "Public" && s.publishedByUserId === userId && (
+                  {s.scope === "Public" && isPublisher && (
                     <button className="btn btn-sm btn-outline" onClick={() => handleUnpublish(s.id, s.name)}>
                       Unpublish
                     </button>
                   )}
-                  {s.scope === "Private" && s.ownerId === userId && (
+                  {s.scope === "Private" && isOwner && (
                     <button className="btn btn-sm btn-outline" onClick={() => handleEdit(s)}>
                       Edit
                     </button>
                   )}
-                  {s.scope === "Private" && s.ownerId === userId && (
+                  {s.scope === "Private" && isOwner && (
                     <button className="btn btn-sm btn-outline btn-outline-danger" onClick={() => handleDelete(s.id)}>
                       Delete
                     </button>
@@ -277,7 +286,8 @@ export default function SkillsPage() {
                   </button>
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
