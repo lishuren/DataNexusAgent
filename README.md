@@ -217,6 +217,8 @@ Features:
 - live execution stream while runs are in progress
 - recent task history
 
+![DataNexus Process page](docs/Screenshot_23-4-2026_153711_localhost.jpeg)
+
 ### Agents
 Manage agents and pipelines.
 
@@ -226,6 +228,8 @@ Features:
 - compose pipelines visually
 - publish, unpublish, clone, edit, delete pipelines
 
+![DataNexus Agents page](docs/Screenshot_23-4-2026_153739_localhost.jpeg)
+
 ### Skills
 Manage prompt skills.
 
@@ -234,6 +238,28 @@ Features:
 - publish, unpublish, clone, delete
 - rename private skills
 
+![DataNexus Skills page](docs/Screenshot_23-4-2026_15382_localhost.jpeg)
+
+### Plugins
+Inspect the built-in plugin catalog and execution flow.
+
+Features:
+- plugin catalog with usage status
+- pre-LLM and post-LLM plugin roles
+- execution flow and security boundary overview
+
+![DataNexus Plugins page](docs/Screenshot_23-4-2026_153827_localhost.jpeg)
+
+### Orchestrations
+Plan and review AI-generated workflows before execution.
+
+Features:
+- freeform goal and constraint input
+- structured or graph draft planning
+- selectable execution mode before approval
+
+![DataNexus Orchestrations page](docs/Screenshot_23-4-2026_153853_localhost.jpeg)
+
 ### Marketplace
 Browse public resources.
 
@@ -241,6 +267,8 @@ Features:
 - public agents
 - public skills
 - plugin catalog
+
+![DataNexus Marketplace page](docs/Screenshot_23-4-2026_153931_localhost.jpeg)
 
 ## API Surface
 
@@ -355,4 +383,4 @@ Check:
 
 ## License / Notes
 
-Add your repository license and contribution policy here if needed.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
